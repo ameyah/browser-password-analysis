@@ -20,6 +20,7 @@ class Passwords:
         self.domain_visits = defaultdict(list)
         self.domain_access_frequency = dict()
         self.unused_accounts = set()
+        self.password_change_domains = set()
 
     def detect_os(self):
         self.os = platform.system()
@@ -191,6 +192,16 @@ class Passwords:
             if not frequency_set_flag:
                 self.domain_access_frequency[domain] = 2
 
+    def determine_password_change(self):
+        for domain in self.domain_access_frequency:
+            frequency = self.domain_access_frequency[domain]
+            if frequency == 2 or frequency == 3:
+                passwords = self.domain_password_dict[domain]
+                for password in passwords:
+                    for temp_domain in self.password_domain_dict[password]:
+                        if temp_domain in self.unused_accounts:
+                            self.password_change_domains.add(temp_domain)
+
     def print_basic_analyses(self):
         print "------------- Basic Analyses -------------"
         print "Reused passwords:"
@@ -207,6 +218,9 @@ class Passwords:
                 print domain + " => " + "Frequent"
             else:
                 print domain + " => " + "Very Frequent"
+        print "\n\nChange the passwords of these domains:"
+        for domain in self.password_change_domains:
+            print domain
 
     def get_chrome_passwords(self):
         # if not self.check_chrome_exists():
@@ -218,6 +232,7 @@ class Passwords:
         self.close_sqlite_connection()
         self.get_chrome_history()
         self.calculate_account_frequency()
+        self.determine_password_change()
         self.print_basic_analyses()
 
 
