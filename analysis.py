@@ -4,7 +4,7 @@ import platform
 import commands
 from collections import defaultdict
 import os
-from hashlib import md5
+from hashlib import md5, sha512
 from tldextract import tldextract
 from constants import *
 from datetime import datetime
@@ -59,6 +59,8 @@ class Passwords:
             # currently not checking if chrome is installed, just return the Login Data path
             return os.path.join(os.path.expandvars("%userprofile%"),
                                 "AppData\Local\Google\Chrome\User Data\Default\Login Data")
+        elif self.os == OSX:
+            return "/Users/mirkovic/Library/Application Support/Google/Chrome/Default/Login Data"
 
     def get_chrome_sqlite_history_path(self):
         if self.os == UBUNTU:
@@ -86,8 +88,10 @@ class Passwords:
             exit()
 
     def store_passwords_domain(self, domain, password):
-        self.password_domain_dict[password].add(domain)
-        self.domain_password_dict[domain].add(password)
+        hashed_password = sha512(password).hexdigest()
+        hashed_password = md5(hashed_password).hexdigest()
+        self.password_domain_dict[hashed_password].add(domain)
+        self.domain_password_dict[domain].add(hashed_password)
         # Remove from unused accounts when we find a visit that is within the last 90 days
         self.unused_accounts.add(domain)
 
@@ -98,6 +102,11 @@ class Passwords:
             password = win32crypt.CryptUnprotectData(password, None, None, None, 0)[1]
             domain = self.get_url_domain(url)
             password = md5(password).hexdigest()
+            self.store_passwords_domain(domain, password)
+
+    def get_chrome_passwords_sqlite_osx(self, login_data):
+        for url, user_name, password in login_data:
+            domain = self.get_url_domain(url)
             self.store_passwords_domain(domain, password)
 
     def get_chrome_passwords_sqlite(self):
@@ -113,8 +122,12 @@ class Passwords:
         login_data = cursor.fetchall()
         if self.os == WINDOWS:
             self.get_chrome_passwords_sqlite_windows(login_data)
+        elif self.os == OSX:
+            self.get_chrome_passwords_sqlite_osx(login_data)
 
     def get_chrome_passwords_keyring(self):
+        if self.os != UBUNTU:
+            return
         import gnomekeyring
 
         for keyring in gnomekeyring.list_keyring_names_sync():
@@ -208,8 +221,7 @@ class Passwords:
         for password in self.password_domain_dict:
             print password + " => " + str(len(self.password_domain_dict[password]))
         print "\n\nUnused Accounts:"
-        for account in self.unused_accounts:
-            print account
+        print ", ".join(self.unused_accounts)
         print "\n\nFrequency of access:"
         for domain in self.domain_access_frequency:
             if self.domain_access_frequency[domain] == 1:
@@ -219,8 +231,7 @@ class Passwords:
             else:
                 print domain + " => " + "Very Frequent"
         print "\n\nChange the passwords of these domains:"
-        for domain in self.password_change_domains:
-            print domain
+        print ", ".join(self.password_change_domains)
 
     def get_chrome_passwords(self):
         # if not self.check_chrome_exists():
@@ -229,6 +240,9 @@ class Passwords:
         self.get_chrome_passwords_sqlite()
         if len(self.password_domain_dict) == 0:
             self.get_chrome_passwords_keyring()
+        if len(self.password_domain_dict) == 0:
+            print "No passwords found"
+            return
         self.close_sqlite_connection()
         self.get_chrome_history()
         self.calculate_account_frequency()
