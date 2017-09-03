@@ -71,6 +71,8 @@ class Passwords:
             # currently not checking if chrome is installed, just return the Login Data path
             return os.path.join(os.path.expandvars("%userprofile%"),
                                 "AppData\Local\Google\Chrome\User Data\Default\History")
+        elif self.os == OSX:
+            return "/Users/mirkovic/Library/Application Support/Google/Chrome/Default/History"
 
     def get_sqlite_connection(self, path):
         self.conn = sqlite3.connect(path)
