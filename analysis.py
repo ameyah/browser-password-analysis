@@ -60,7 +60,8 @@ class Passwords:
             return os.path.join(os.path.expandvars("%userprofile%"),
                                 "AppData\Local\Google\Chrome\User Data\Default\Login Data")
         elif self.os == OSX:
-            return "/Users/mirkovic/Library/Application Support/Google/Chrome/Default/Login Data"
+            username = commands.getoutput("whoami")
+            return "/Users/" + username + "/Library/Application Support/Google/Chrome/Default/Login Data"
 
     def get_chrome_sqlite_history_path(self):
         if self.os == UBUNTU:
@@ -72,7 +73,8 @@ class Passwords:
             return os.path.join(os.path.expandvars("%userprofile%"),
                                 "AppData\Local\Google\Chrome\User Data\Default\History")
         elif self.os == OSX:
-            return "/Users/mirkovic/Library/Application Support/Google/Chrome/Default/History"
+            username = commands.getoutput("whoami")
+            return "/Users/" + username + "/Library/Application Support/Google/Chrome/Default/History"
 
     def get_sqlite_connection(self, path):
         self.conn = sqlite3.connect(path)
@@ -108,6 +110,8 @@ class Passwords:
 
     def get_chrome_passwords_sqlite_osx(self, login_data):
         for url, user_name, password in login_data:
+            if password == '':
+                continue
             domain = self.get_url_domain(url)
             self.store_passwords_domain(domain, password)
 
@@ -119,7 +123,7 @@ class Passwords:
         count = cursor.fetchone()[0]
         if count == 0:
             return False
-        sql = '''SELECT origin_url, username_value, password_value FROM logins WHERE origin_url != ""'''
+        sql = '''SELECT origin_url, username_value, hex(password_value) FROM logins WHERE origin_url != ""'''
         cursor = self.execute_sqlite(sql)
         login_data = cursor.fetchall()
         if self.os == WINDOWS:
