@@ -7,7 +7,8 @@ import os
 from hashlib import md5, sha512
 from tldextract import tldextract
 from constants import *
-from datetime import datetime
+from datetime import datetime, timedelta, date
+from time import time
 
 
 class Passwords:
@@ -21,6 +22,13 @@ class Passwords:
         self.domain_access_frequency = dict()
         self.unused_accounts = set()
         self.password_change_domains = set()
+        self.weighted_avg_days_online_past = 0
+        self.weighted_avg_days_online_current = 0
+        self.first_online_timestamp = 0
+        self.last_online_timestamp = 0
+        self.weighted_avg_timestamp_past = int((datetime.now() - timedelta(days=14)).strftime("%s"))
+        self.start_year_weeks = 0
+        self.total_weeks_history = 0
 
     def detect_os(self):
         self.os = platform.system()
@@ -39,18 +47,6 @@ class Passwords:
             return p.returncode == 0
 
     def get_chrome_sqlite_login_data_path(self):
-        # os.path.join(os.path.expandvars("%userprofile%"),"AppData\Local\Google\Chrome\User Data\Default\Login Data")
-        '''
-         c = conn.execute("SELECT password_value from logins LIMIT 1")
-        >>> b = c.fetchall()
-        >>> b
-        [(<read-write buffer ptr 0x032D5988, size 230 at 0x032D5968>,)]
-        >>> b[0]
-        (<read-write buffer ptr 0x032D5988, size 230 at 0x032D5968>,)
-        >>> b[0][0]
-        <read-write buffer ptr 0x032D5988, size 230 at 0x032D5968>
-        >>> s = str(b[0][0]).encode("hex")
-        '''
         if self.os == UBUNTU:
             username = commands.getoutput("whoami")
             return "/home/" + username + "/.config/google-chrome/Default/Login Data" if self.check_chrome_exists() \
@@ -75,6 +71,19 @@ class Passwords:
         elif self.os == OSX:
             username = commands.getoutput("whoami")
             return "/Users/" + username + "/Library/Application Support/Google/Chrome/Default/History"
+
+    def get_days_accessed(self, domain, start, end):
+        days_accessed = 0
+        for timestamp in self.domain_visits[domain]:
+            if start <= timestamp <= end:
+                days_accessed += 1
+        return float(days_accessed)
+
+    def increment_days_online(self, visit_time):
+        if visit_time <= self.weighted_avg_timestamp_past:
+            self.weighted_avg_days_online_past += 1
+        else:
+            self.weighted_avg_days_online_current += 1
 
     def get_sqlite_connection(self, path):
         self.conn = sqlite3.connect(path)
@@ -154,21 +163,44 @@ class Passwords:
                     urls on visits.url = urls.id where urls.url != "" order by visit_time desc'''
         cursor = self.execute_sqlite(sql)
         history_data = cursor.fetchall()
+        prev_log_date = None
         for history in history_data:
+            visit_time = history[1]
+            if self.last_online_timestamp == 0:
+                self.last_online_timestamp = visit_time
+            self.first_online_timestamp = visit_time
+            if prev_log_date is None:
+                prev_log_date = datetime.fromtimestamp(visit_time)
+                prev_log_date = prev_log_date.date()
+                self.increment_days_online(visit_time)
+                self.total_weeks_history += 1
+                print "week" + prev_log_date.strftime("%V")
+            log_date = datetime.fromtimestamp(visit_time)
+            log_date = log_date.date()
+            if log_date < prev_log_date:
+                prev_week_number = int(prev_log_date.strftime("%V"))
+                current_week_number = int(log_date.strftime("%V"))
+                self.increment_days_online(visit_time)
+                if current_week_number != prev_week_number:
+                    self.total_weeks_history += 1
+                    print "week" + prev_log_date.strftime("%V")
+                prev_log_date = log_date
+
             domain = self.get_url_domain(history[0])
             if domain in self.domain_password_dict:
-                visit_time = history[1]
                 if len(self.domain_visits[domain]) == 0:
                     self.domain_visits[domain].append(visit_time)
                 else:
                     prev_date = datetime.fromtimestamp(self.domain_visits[domain][-1])
                     prev_date = prev_date.date()
-                    log_date = datetime.fromtimestamp(visit_time)
-                    log_date = log_date.date()
                     if log_date < prev_date:
                         self.domain_visits[domain].append(visit_time)
                 if domain in self.unused_accounts:
                     self.unused_accounts.remove(domain)
+        self.start_year_weeks = date(
+            datetime.fromtimestamp(self.first_online_timestamp).year,
+            12,
+            28).isocalendar()[1]
 
     def calculate_account_frequency(self):
         """
@@ -177,39 +209,49 @@ class Passwords:
                 2 => frequent (at least once a week)
                 1 => intermittently
         """
+        print self.total_weeks_history
         for domain in self.domain_visits:
             # determine very frequent access - 5 days out of 7 ~ 71% of days
+            # frequent access - 10 days out of 30 ~ 33.33% of days
             if len(self.domain_visits[domain]) == 0:
                 continue
-            start_date = datetime.fromtimestamp(self.domain_visits[domain][-1]).date()
+            """
+            start_date = datetime.fromtimestamp(self.first_online_timestamp).date()
             end_date = datetime.now().date()
             duration_of_access = float((end_date - start_date).days)
-            days_accessed = float(len(self.domain_visits[domain]))
+            """
+            past_days_accessed = self.get_days_accessed(domain, start=self.first_online_timestamp,
+                                                        end=self.weighted_avg_timestamp_past)
+            current_days_accessed = self.get_days_accessed(domain, start=self.weighted_avg_timestamp_past + 1,
+                                                           end=time())
             try:
-                access_frequency = float(days_accessed / duration_of_access)
+                past_access_frequency = float(past_days_accessed / float(self.weighted_avg_days_online_past))
             except ZeroDivisionError as _:
-                self.domain_access_frequency[domain] = 1
-                continue
+                past_access_frequency = 0
+            try:
+                current_access_frequency = float(current_days_accessed / float(self.weighted_avg_days_online_current))
+            except ZeroDivisionError as _:
+                current_access_frequency = 0
+
+            access_frequency = (WEIGHTED_AVG_PAST_WEIGHT * past_access_frequency) + (
+                WEIGHTED_AVG_CURRENT_WEIGHT * current_access_frequency)
+
             if access_frequency >= 0.71:
                 self.domain_access_frequency[domain] = 3
                 continue
 
             # determine frequent access
             prev_week_number = None
-            frequency_set_flag = False
+            weeks_accessed = 0
             for timestamp in reversed(self.domain_visits[domain]):
-                week_number = int(datetime.fromtimestamp(timestamp).strftime("%V"))
-                if prev_week_number is None:
-                    prev_week_number = week_number
-                else:
-                    if week_number - prev_week_number == 1:
-                        prev_week_number = week_number
-                    elif week_number - prev_week_number > 1:
-                        self.domain_access_frequency[domain] = 1
-                        frequency_set_flag = True
-                        break
-            if not frequency_set_flag:
+                current_week_number = int(datetime.fromtimestamp(timestamp).strftime("%V"))
+                if prev_week_number != current_week_number:
+                    prev_week_number = current_week_number
+                    weeks_accessed += 1
+            if weeks_accessed >= self.total_weeks_history or access_frequency >= 0.33:
                 self.domain_access_frequency[domain] = 2
+            else:
+                self.domain_access_frequency[domain] = 1
 
     def determine_password_change(self):
         for domain in self.domain_access_frequency:
