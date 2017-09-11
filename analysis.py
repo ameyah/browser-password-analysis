@@ -9,10 +9,14 @@ from tldextract import tldextract
 from constants import *
 from datetime import datetime, timedelta, date
 from time import time
+from Tkinter import Tk, INSERT, Text, Button, END
 
 
 class Passwords:
-    def __init__(self):
+    def __init__(self, tk_interface):
+        self.tk = tk_interface
+        self.ui_start_button = None
+        self.ui_text_box = None
         self.conn = None
         self.os = None
         self.detect_os()
@@ -29,6 +33,15 @@ class Passwords:
         self.weighted_avg_timestamp_past = int((datetime.now() - timedelta(days=14)).strftime("%s"))
         self.start_year_weeks = 0
         self.total_weeks_history = 0
+        self.render_ui()
+
+    def render_ui(self):
+        self.tk.winfo_toplevel().title("Browser Password Analysis")
+        self.ui_start_button = Button(tk, text="Start", command=self.start_analysis)
+        self.ui_text_box = Text(self.tk)
+        self.ui_start_button.pack()
+        self.ui_text_box.pack()
+        self.tk.mainloop()
 
     def detect_os(self):
         self.os = platform.system()
@@ -97,8 +110,8 @@ class Passwords:
         try:
             return self.conn.execute(sql)
         except sqlite3.OperationalError:
-            print "Please exit Google Chrome before running this script."
-            exit()
+            self.ui_text_box.insert(INSERT, "Please exit Google Chrome before running this script.\n")
+            raise sqlite3.OperationalError()
 
     def store_passwords_domain(self, domain, password):
         hashed_password = sha512(password).hexdigest()
@@ -128,12 +141,18 @@ class Passwords:
         path = self.get_chrome_sqlite_login_data_path()
         self.get_sqlite_connection(path)
         sql = "SELECT COUNT(*) FROM logins"
-        cursor = self.execute_sqlite(sql)
+        try:
+            cursor = self.execute_sqlite(sql)
+        except sqlite3.OperationalError:
+            return
         count = cursor.fetchone()[0]
         if count == 0:
             return False
         sql = '''SELECT origin_url, username_value, hex(password_value) FROM logins WHERE origin_url != ""'''
-        cursor = self.execute_sqlite(sql)
+        try:
+            cursor = self.execute_sqlite(sql)
+        except sqlite3.OperationalError:
+            return
         login_data = cursor.fetchall()
         if self.os == WINDOWS:
             self.get_chrome_passwords_sqlite_windows(login_data)
@@ -161,7 +180,10 @@ class Passwords:
         self.get_sqlite_connection(path)
         sql = '''select urls.url, (visit_time / 1000000 + (strftime('%s', '1601-01-01'))) visit_time from visits join
                     urls on visits.url = urls.id where urls.url != "" order by visit_time desc'''
-        cursor = self.execute_sqlite(sql)
+        try:
+            cursor = self.execute_sqlite(sql)
+        except sqlite3.OperationalError:
+            return False
         history_data = cursor.fetchall()
         prev_log_date = None
         for history in history_data:
@@ -174,7 +196,6 @@ class Passwords:
                 prev_log_date = prev_log_date.date()
                 self.increment_days_online(visit_time)
                 self.total_weeks_history += 1
-                print "week" + prev_log_date.strftime("%V")
             log_date = datetime.fromtimestamp(visit_time)
             log_date = log_date.date()
             if log_date < prev_log_date:
@@ -183,7 +204,6 @@ class Passwords:
                 self.increment_days_online(visit_time)
                 if current_week_number != prev_week_number:
                     self.total_weeks_history += 1
-                    print "week" + prev_log_date.strftime("%V")
                 prev_log_date = log_date
 
             domain = self.get_url_domain(history[0])
@@ -201,6 +221,7 @@ class Passwords:
             datetime.fromtimestamp(self.first_online_timestamp).year,
             12,
             28).isocalendar()[1]
+        return True
 
     def calculate_account_frequency(self):
         """
@@ -209,7 +230,6 @@ class Passwords:
                 2 => frequent (at least once a week)
                 1 => intermittently
         """
-        print self.total_weeks_history
         for domain in self.domain_visits:
             # determine very frequent access - 5 days out of 7 ~ 71% of days
             # frequent access - 10 days out of 30 ~ 33.33% of days
@@ -264,40 +284,58 @@ class Passwords:
                             self.password_change_domains.add(temp_domain)
 
     def print_basic_analyses(self):
-        print "------------- Basic Analyses -------------"
-        print "Reused passwords:"
+        self.ui_text_box.delete(1.0, END)
+        self.ui_text_box.insert(INSERT, "------------- Basic Analyses -------------\n")
+        self.ui_text_box.insert(INSERT, "Reused passwords:\n")
         for password in self.password_domain_dict:
-            print password + " => " + str(len(self.password_domain_dict[password]))
-        print "\n\nUnused Accounts:"
-        print ", ".join(self.unused_accounts)
-        print "\n\nFrequency of access:"
+            self.ui_text_box.insert(INSERT, password + " => " + str(len(self.password_domain_dict[password])) + "\n")
+        self.ui_text_box.insert(INSERT, "\n\nUnused Accounts:\n")
+        unused_accounts = sorted(self.unused_accounts)
+        for account in unused_accounts:
+            self.ui_text_box.insert(INSERT, account + "\n")
+        self.ui_text_box.insert(INSERT, "\n\nFrequency of access:\n")
         for domain in self.domain_access_frequency:
             if self.domain_access_frequency[domain] == 1:
-                print domain + " => " + "Intermittently"
+                self.ui_text_box.insert(INSERT, domain + " => " + "Intermittently\n")
             elif self.domain_access_frequency[domain] == 2:
-                print domain + " => " + "Frequent"
+                self.ui_text_box.insert(INSERT, domain + " => " + "Frequent\n")
             else:
-                print domain + " => " + "Very Frequent"
-        print "\n\nChange the passwords of these domains:"
-        print ", ".join(self.password_change_domains)
+                self.ui_text_box.insert(INSERT, domain + " => " + "Very Frequent\n")
+        self.ui_text_box.insert(INSERT, "\n\nChange the passwords of these domains:\n")
+        change_password_domains = sorted(self.password_change_domains)
+        for domain in change_password_domains:
+            self.ui_text_box.insert(INSERT, domain + "\n")
+
+        self.ui_text_box.pack()
 
     def get_chrome_passwords(self):
         # if not self.check_chrome_exists():
         # return False
 
-        self.get_chrome_passwords_sqlite()
+        result = self.get_chrome_passwords_sqlite()
+        if result == False:
+            return False
         if len(self.password_domain_dict) == 0:
             self.get_chrome_passwords_keyring()
         if len(self.password_domain_dict) == 0:
-            print "No passwords found"
+            self.ui_text_box.insert(INSERT, "No passwords found\n")
             return
         self.close_sqlite_connection()
-        self.get_chrome_history()
+        result = self.get_chrome_history()
+        if result == False:
+            return False
+        self.close_sqlite_connection()
         self.calculate_account_frequency()
         self.determine_password_change()
+
+    def start_analysis(self):
+        result = self.get_chrome_passwords()
+        if result == False:
+            return
         self.print_basic_analyses()
 
 
 if __name__ == '__main__':
-    passwords_obj = Passwords()
-    passwords_obj.get_chrome_passwords()
+    tk = Tk()
+    passwords_obj = Passwords(tk)
+    passwords_obj.start_analysis()
