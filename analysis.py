@@ -7,7 +7,7 @@ import os
 from hashlib import md5, sha512
 from tldextract import tldextract
 from constants import *
-from alexa_top import top_sites
+from top_sites import top_sites
 from datetime import datetime, timedelta, date
 from time import time
 from Tkinter import Tk, INSERT, Button, END, LEFT, Label, Toplevel
