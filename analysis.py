@@ -7,16 +7,21 @@ import os
 from hashlib import md5, sha512
 from tldextract import tldextract
 from constants import *
+from alexa_top import top_sites
 from datetime import datetime, timedelta, date
 from time import time
-from Tkinter import Tk, INSERT,     Button, END
+from Tkinter import Tk, INSERT, Button, END, LEFT, Label, Toplevel
+import tkMessageBox
 from ScrolledText import ScrolledText
 
 
 class Passwords:
     def __init__(self, tk_interface):
         self.tk = tk_interface
+        self.button_frame = None
         self.ui_start_button = None
+        self.ui_about_button = None
+        self.ui_report_button = None
         self.ui_text_box = None
         self.conn = None
         self.os = None
@@ -38,11 +43,36 @@ class Passwords:
 
     def render_ui(self):
         self.tk.winfo_toplevel().title("Browser Password Analysis")
-        self.ui_start_button = Button(tk, text="Start", command=self.start_analysis)
+        Label(self.tk, text="Chrome Password Analysis", font=("Helvetica", 20)).grid(row=0, columnspan=3)
+        Button(self.tk, text="Start", command=self.start_analysis).grid(row=2, column=0)
+        Button(self.tk, text="About", command=self.about_click).grid(row=2, column=1)
+        Button(self.tk, text="Preview and Send Summary", command=self.report_click).grid(row=2, column=2)
         self.ui_text_box = ScrolledText(self.tk, undo=True)
-        self.ui_start_button.pack()
-        self.ui_text_box.pack()
+        self.ui_text_box.grid(row=4, columnspan=3)
         self.tk.mainloop()
+
+    @staticmethod
+    def about_click():
+        message = "This tool extracts and provides analysis of your passwords stored by Chrome.\n" \
+                  "You can choose to share a minimal set of analyses with us.\nThe data will only be " \
+                  "used for research purposes, and no personal identifying information will be collected.\n\n" \
+                  "For further questions, please contact:\n" \
+                  "Jelena Mirkovic <mirkovic@isi.edu>\n" \
+                  "Ameya Hanamsagar <ahanamsa@usc.edu>"
+        # tkMessageBox.showinfo("About", message)
+        dialog = Toplevel()
+        dialog.title("About this tool")
+        msg = Label(dialog, text=message, justify=LEFT)
+        msg.pack(padx=30, pady=30)
+
+    def report_click(self):
+        dialog = Toplevel()
+        dialog.title("Preview Report")
+        Button(dialog, text="Send Report", command=self.send_report).pack()
+        label = Label(dialog, width=200, height=200).pack()
+
+    def send_report(self):
+        pass
 
     def detect_os(self):
         self.os = platform.system()
@@ -307,8 +337,6 @@ class Passwords:
         for domain in change_password_domains:
             self.ui_text_box.insert(INSERT, domain + "\n")
 
-        self.ui_text_box.pack()
-
     def get_chrome_passwords(self):
         # if not self.check_chrome_exists():
         # return False
@@ -331,7 +359,6 @@ class Passwords:
 
     def start_analysis(self):
         self.ui_text_box.insert(INSERT, "Processing. Please Wait...\n")
-        self.ui_text_box.pack()
         result = self.get_chrome_passwords()
         if result == False:
             return
