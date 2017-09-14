@@ -9,7 +9,8 @@ from tldextract import tldextract
 from constants import *
 from datetime import datetime, timedelta, date
 from time import time
-from Tkinter import Tk, INSERT, Text, Button, END
+from Tkinter import Tk, INSERT,     Button, END
+from ScrolledText import ScrolledText
 
 
 class Passwords:
@@ -38,7 +39,7 @@ class Passwords:
     def render_ui(self):
         self.tk.winfo_toplevel().title("Browser Password Analysis")
         self.ui_start_button = Button(tk, text="Start", command=self.start_analysis)
-        self.ui_text_box = Text(self.tk)
+        self.ui_text_box = ScrolledText(self.tk, undo=True)
         self.ui_start_button.pack()
         self.ui_text_box.pack()
         self.tk.mainloop()
@@ -144,10 +145,10 @@ class Passwords:
         try:
             cursor = self.execute_sqlite(sql)
         except sqlite3.OperationalError:
-            return
+            return False
         count = cursor.fetchone()[0]
         if count == 0:
-            return False
+            return
         sql = '''SELECT origin_url, username_value, hex(password_value) FROM logins WHERE origin_url != ""'''
         try:
             cursor = self.execute_sqlite(sql)
@@ -319,7 +320,7 @@ class Passwords:
             self.get_chrome_passwords_keyring()
         if len(self.password_domain_dict) == 0:
             self.ui_text_box.insert(INSERT, "No passwords found\n")
-            return
+            return False
         self.close_sqlite_connection()
         result = self.get_chrome_history()
         if result == False:
@@ -329,6 +330,8 @@ class Passwords:
         self.determine_password_change()
 
     def start_analysis(self):
+        self.ui_text_box.insert(INSERT, "Processing. Please Wait...\n")
+        self.ui_text_box.pack()
         result = self.get_chrome_passwords()
         if result == False:
             return
@@ -338,4 +341,3 @@ class Passwords:
 if __name__ == '__main__':
     tk = Tk()
     passwords_obj = Passwords(tk)
-    passwords_obj.start_analysis()
