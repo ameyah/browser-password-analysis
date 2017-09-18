@@ -299,8 +299,6 @@ class Passwords:
                                                            end=time())
             current_days_online = self.get_days_online_after_timestamp(past_timestamp_end + 1)
             past_days_online = self.get_days_online_after_timestamp(past_timestamp_start)
-            if domain == "facebook.com":
-                print current_days_online, past_days_online
             try:
                 past_access_frequency = float(past_days_accessed / float(past_days_online))
             except ZeroDivisionError as _:
@@ -312,9 +310,6 @@ class Passwords:
 
             access_frequency = (WEIGHTED_AVG_PAST_WEIGHT * past_access_frequency) + (
                 WEIGHTED_AVG_CURRENT_WEIGHT * current_access_frequency)
-
-            if domain == "facebook.com":
-                print access_frequency
 
             while past_timestamp_end >= self.first_online_timestamp:
                 past_timestamp_end = past_timestamp_start - 1
@@ -328,9 +323,7 @@ class Passwords:
                     past_access_frequency = 0
                 access_frequency = (WEIGHTED_AVG_PAST_WEIGHT * past_access_frequency) + (
                     WEIGHTED_AVG_CURRENT_WEIGHT * access_frequency)
-            if domain == "facebook.com":
-                print access_frequency
-            if access_frequency >= 0.71:
+            if access_frequency >= 0.4:
                 self.domain_access_frequency[domain] = 3
                 continue
 
@@ -342,10 +335,12 @@ class Passwords:
                 if prev_week_number != current_week_number:
                     prev_week_number = current_week_number
                     weeks_accessed += 1
-            if weeks_accessed >= self.total_weeks_history or access_frequency >= 0.33:
+            if weeks_accessed >= self.total_weeks_history or access_frequency >= 0.2:
                 self.domain_access_frequency[domain] = 2
             else:
                 self.domain_access_frequency[domain] = 1
+
+            print domain + " " + str(access_frequency)
 
     def determine_password_change(self):
         for domain in self.domain_access_frequency:
