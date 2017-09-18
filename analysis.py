@@ -13,6 +13,7 @@ from time import time
 from Tkinter import Tk, INSERT, Button, END, LEFT, Label, Toplevel
 import tkMessageBox
 from ScrolledText import ScrolledText
+import operator
 
 
 class Passwords:
@@ -37,6 +38,8 @@ class Passwords:
         self.first_online_timestamp = 0
         self.last_online_timestamp = 0
         self.weighted_avg_timestamp_past = int((datetime.now() - timedelta(days=14)).strftime("%s"))
+        self.days_online_timestamp = []
+        self.days_online_index = 0
         self.start_year_weeks = 0
         self.total_weeks_history = 0
         self.render_ui()
@@ -84,6 +87,10 @@ class Passwords:
         domain_obj = tldextract.extract(url)
         return "%s.%s" % (domain_obj.domain, domain_obj.suffix)
 
+    @staticmethod
+    def get_timestamp_past(current_datetime):
+        return current_datetime - timedelta(days=14)
+
     def check_chrome_exists(self):
         if self.os == UBUNTU:
             p = Popen(['/usr/bin/which', 'google-chrome'], stdout=PIPE, stderr=PIPE)
@@ -124,10 +131,21 @@ class Passwords:
         return float(days_accessed)
 
     def increment_days_online(self, visit_time):
+        self.days_online_timestamp.append(visit_time)
         if visit_time <= self.weighted_avg_timestamp_past:
             self.weighted_avg_days_online_past += 1
         else:
             self.weighted_avg_days_online_current += 1
+
+    def get_days_online_after_timestamp(self, end_timestamp):
+        count = 0
+        while self.days_online_index < len(self.days_online_timestamp):
+            if self.days_online_timestamp[self.days_online_index] >= end_timestamp:
+                count += 1
+                self.days_online_index += 1
+                continue
+            return count
+        return count
 
     def get_sqlite_connection(self, path):
         self.conn = sqlite3.connect(path)
@@ -266,27 +284,52 @@ class Passwords:
             # frequent access - 10 days out of 30 ~ 33.33% of days
             if len(self.domain_visits[domain]) == 0:
                 continue
-            """
-            start_date = datetime.fromtimestamp(self.first_online_timestamp).date()
-            end_date = datetime.now().date()
-            duration_of_access = float((end_date - start_date).days)
-            """
-            past_days_accessed = self.get_days_accessed(domain, start=self.first_online_timestamp,
-                                                        end=self.weighted_avg_timestamp_past)
-            current_days_accessed = self.get_days_accessed(domain, start=self.weighted_avg_timestamp_past + 1,
+
+            self.days_online_index = 0
+
+            current_datetime = datetime.now()
+            past_datetime_end = self.get_timestamp_past(current_datetime)
+            past_datetime_start = self.get_timestamp_past(past_datetime_end)
+
+            past_timestamp_start = int(past_datetime_start.strftime("%s"))
+            past_timestamp_end = int(past_datetime_end.strftime("%s"))
+            past_days_accessed = self.get_days_accessed(domain, start=past_timestamp_start,
+                                                        end=past_timestamp_end)
+            current_days_accessed = self.get_days_accessed(domain, start=past_timestamp_end + 1,
                                                            end=time())
+            current_days_online = self.get_days_online_after_timestamp(past_timestamp_end + 1)
+            past_days_online = self.get_days_online_after_timestamp(past_timestamp_start)
+            if domain == "facebook.com":
+                print current_days_online, past_days_online
             try:
-                past_access_frequency = float(past_days_accessed / float(self.weighted_avg_days_online_past))
+                past_access_frequency = float(past_days_accessed / float(past_days_online))
             except ZeroDivisionError as _:
                 past_access_frequency = 0
             try:
-                current_access_frequency = float(current_days_accessed / float(self.weighted_avg_days_online_current))
+                current_access_frequency = float(current_days_accessed / float(current_days_online))
             except ZeroDivisionError as _:
                 current_access_frequency = 0
 
             access_frequency = (WEIGHTED_AVG_PAST_WEIGHT * past_access_frequency) + (
                 WEIGHTED_AVG_CURRENT_WEIGHT * current_access_frequency)
 
+            if domain == "facebook.com":
+                print access_frequency
+
+            while past_timestamp_end >= self.first_online_timestamp:
+                past_timestamp_end = past_timestamp_start - 1
+                past_datetime_start = self.get_timestamp_past(past_datetime_start)
+                past_timestamp_start = int(past_datetime_start.strftime("%s"))
+                past_days_accessed = self.get_days_accessed(domain, start=past_timestamp_start, end=past_timestamp_end)
+                past_days_online = self.get_days_online_after_timestamp(past_timestamp_start)
+                try:
+                    past_access_frequency = float(past_days_accessed / float(past_days_online))
+                except ZeroDivisionError as _:
+                    past_access_frequency = 0
+                access_frequency = (WEIGHTED_AVG_PAST_WEIGHT * past_access_frequency) + (
+                    WEIGHTED_AVG_CURRENT_WEIGHT * access_frequency)
+            if domain == "facebook.com":
+                print access_frequency
             if access_frequency >= 0.71:
                 self.domain_access_frequency[domain] = 3
                 continue
@@ -318,20 +361,27 @@ class Passwords:
         self.ui_text_box.delete(1.0, END)
         self.ui_text_box.insert(INSERT, "------------- Basic Analyses -------------\n")
         self.ui_text_box.insert(INSERT, "Reused passwords:\n")
-        for password in self.password_domain_dict:
+        sorted_passwords = sorted(self.password_domain_dict, key=lambda x: len(self.password_domain_dict[x]),
+                                  reverse=True)
+        for password in sorted_passwords:
             self.ui_text_box.insert(INSERT, password + " => " + str(len(self.password_domain_dict[password])) + "\n")
         self.ui_text_box.insert(INSERT, "\n\nUnused Accounts:\n")
         unused_accounts = sorted(self.unused_accounts)
         for account in unused_accounts:
             self.ui_text_box.insert(INSERT, account + "\n")
         self.ui_text_box.insert(INSERT, "\n\nFrequency of access:\n")
-        for domain in self.domain_access_frequency:
-            if self.domain_access_frequency[domain] == 1:
-                self.ui_text_box.insert(INSERT, domain + " => " + "Intermittently\n")
-            elif self.domain_access_frequency[domain] == 2:
-                self.ui_text_box.insert(INSERT, domain + " => " + "Frequent\n")
-            else:
-                self.ui_text_box.insert(INSERT, domain + " => " + "Very Frequent\n")
+        domain_frequency_sorted = sorted(self.domain_access_frequency.items(), key=operator.itemgetter(1), reverse=True)
+        current_frequency = 4
+        for i in xrange(len(domain_frequency_sorted)):
+            if current_frequency > domain_frequency_sorted[i][1]:
+                current_frequency = domain_frequency_sorted[i][1]
+                if current_frequency == 1:
+                    self.ui_text_box.insert(INSERT, "\nIntermittently accessed accounts:\n")
+                if current_frequency == 2:
+                    self.ui_text_box.insert(INSERT, "\nFrequently accessed accounts:\n")
+                if current_frequency == 3:
+                    self.ui_text_box.insert(INSERT, "\nVery Frequently accessed accounts:\n")
+            self.ui_text_box.insert(INSERT, domain_frequency_sorted[i][0] + "\n")
         self.ui_text_box.insert(INSERT, "\n\nChange the passwords of these domains:\n")
         change_password_domains = sorted(self.password_change_domains)
         for domain in change_password_domains:
