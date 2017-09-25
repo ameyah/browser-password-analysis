@@ -12,18 +12,15 @@ from datetime import datetime, timedelta, date
 from time import time
 from Tkinter import Tk, INSERT, Button, END, LEFT, Label, Toplevel
 import tkMessageBox
+from ui_components.ToggledFrame import ToggledFrame
+from ui_components.ToolUi import ToolUi
 from ScrolledText import ScrolledText
 import operator
 
 
 class Passwords:
     def __init__(self, tk_interface):
-        self.tk = tk_interface
-        self.button_frame = None
-        self.ui_start_button = None
-        self.ui_about_button = None
-        self.ui_report_button = None
-        self.ui_text_box = None
+        self.ui_interface = tk_interface
         self.conn = None
         self.os = None
         self.detect_os()
@@ -45,28 +42,34 @@ class Passwords:
         self.render_ui()
 
     def render_ui(self):
-        self.tk.winfo_toplevel().title("Browser Password Analysis")
-        Label(self.tk, text="Chrome Password Analysis", font=("Helvetica", 20)).grid(row=0, columnspan=3)
-        Button(self.tk, text="Start", command=self.start_analysis).grid(row=2, column=0)
-        Button(self.tk, text="About", command=self.about_click).grid(row=2, column=1)
-        Button(self.tk, text="Preview and Send Summary", command=self.report_click).grid(row=2, column=2)
-        self.ui_text_box = ScrolledText(self.tk, undo=True)
-        self.ui_text_box.grid(row=4, columnspan=3)
-        self.tk.mainloop()
+        title = "Chrome Password Analysis"
+        self.ui_interface.set_window_title(title)
 
-    @staticmethod
-    def about_click():
+        buttons = [
+            {"title": "Start", "callback": self.start_analysis},
+            {"title": "About", "callback": self.about_click},
+            {"title": "Preview and Send Summary", "callback": self.report_click}
+        ]
+
+        self.ui_interface.render_header(title, buttons)
+        toggled_frames = [
+            {"title": "Reused Passwords", "textbox_name": UI_TEXTBOX_REUSED_PASSWORDS},
+            {"title": "Unused Accounts", "textbox_name": UI_TEXTBOX_UNUSED_ACCOUNTS},
+            {"title": "Account Access Frequency", "textbox_name": UI_TEXTBOX_ACCESS_FREQUENCY},
+            {"title": "Accounts needing password reset", "textbox_name": UI_TEXTBOX_CHANGE_PASSWORD},
+        ]
+
+        self.ui_interface.render_frames(toggled_frames)
+
+    def about_click(self):
+        title = "About this tool"
         message = "This tool extracts and provides analysis of your passwords stored by Chrome.\n" \
                   "You can choose to share a minimal set of analyses with us.\nThe data will only be " \
                   "used for research purposes, and no personal identifying information will be collected.\n\n" \
                   "For further questions, please contact:\n" \
                   "Jelena Mirkovic <mirkovic@isi.edu>\n" \
                   "Ameya Hanamsagar <ahanamsa@usc.edu>"
-        # tkMessageBox.showinfo("About", message)
-        dialog = Toplevel()
-        dialog.title("About this tool")
-        msg = Label(dialog, text=message, justify=LEFT)
-        msg.pack(padx=30, pady=30)
+        self.ui_interface.display_popup(title=title, message=message)
 
     def report_click(self):
         dialog = Toplevel()
@@ -159,7 +162,8 @@ class Passwords:
         try:
             return self.conn.execute(sql)
         except sqlite3.OperationalError:
-            self.ui_text_box.insert(INSERT, "Please exit Google Chrome before running this script.\n")
+            self.ui_interface.display_popup(title="Error",
+                                            message="Please exit Google Chrome before running this script.")
             raise sqlite3.OperationalError()
 
     def store_passwords_domain(self, domain, password):
@@ -325,6 +329,7 @@ class Passwords:
                     WEIGHTED_AVG_CURRENT_WEIGHT * access_frequency)
             if access_frequency >= 0.4:
                 self.domain_access_frequency[domain] = 3
+                print domain + " " + str(access_frequency)
                 continue
 
             # determine frequent access
@@ -340,7 +345,8 @@ class Passwords:
             else:
                 self.domain_access_frequency[domain] = 1
 
-            print domain + " " + str(access_frequency)
+            if self.domain_access_frequency[domain] == 2:
+                print domain + " " + str(access_frequency)
 
     def determine_password_change(self):
         for domain in self.domain_access_frequency:
@@ -353,34 +359,36 @@ class Passwords:
                             self.password_change_domains.add(temp_domain)
 
     def print_basic_analyses(self):
-        self.ui_text_box.delete(1.0, END)
-        self.ui_text_box.insert(INSERT, "------------- Basic Analyses -------------\n")
-        self.ui_text_box.insert(INSERT, "Reused passwords:\n")
         sorted_passwords = sorted(self.password_domain_dict, key=lambda x: len(self.password_domain_dict[x]),
                                   reverse=True)
         for password in sorted_passwords:
-            self.ui_text_box.insert(INSERT, password + " => " + str(len(self.password_domain_dict[password])) + "\n")
-        self.ui_text_box.insert(INSERT, "\n\nUnused Accounts:\n")
+            self.ui_interface.text_box_insert(text_box=UI_TEXTBOX_REUSED_PASSWORDS, message=password + " => " + str(
+                len(self.password_domain_dict[password])) + "\n")
+
         unused_accounts = sorted(self.unused_accounts)
         for account in unused_accounts:
-            self.ui_text_box.insert(INSERT, account + "\n")
-        self.ui_text_box.insert(INSERT, "\n\nFrequency of access:\n")
+            self.ui_interface.text_box_insert(text_box=UI_TEXTBOX_UNUSED_ACCOUNTS, message=account + "\n")
+
         domain_frequency_sorted = sorted(self.domain_access_frequency.items(), key=operator.itemgetter(1), reverse=True)
         current_frequency = 4
         for i in xrange(len(domain_frequency_sorted)):
             if current_frequency > domain_frequency_sorted[i][1]:
                 current_frequency = domain_frequency_sorted[i][1]
                 if current_frequency == 1:
-                    self.ui_text_box.insert(INSERT, "\nIntermittently accessed accounts:\n")
+                    self.ui_interface.text_box_insert(text_box=UI_TEXTBOX_ACCESS_FREQUENCY,
+                                                      message="\nIntermittently accessed accounts:\n")
                 if current_frequency == 2:
-                    self.ui_text_box.insert(INSERT, "\nFrequently accessed accounts:\n")
+                    self.ui_interface.text_box_insert(text_box=UI_TEXTBOX_ACCESS_FREQUENCY,
+                                                      message="\nFrequently accessed accounts:\n")
                 if current_frequency == 3:
-                    self.ui_text_box.insert(INSERT, "\nVery Frequently accessed accounts:\n")
-            self.ui_text_box.insert(INSERT, domain_frequency_sorted[i][0] + "\n")
-        self.ui_text_box.insert(INSERT, "\n\nChange the passwords of these domains:\n")
+                    self.ui_interface.text_box_insert(text_box=UI_TEXTBOX_ACCESS_FREQUENCY,
+                                                      message="\nVery Frequently accessed accounts:\n")
+            self.ui_interface.text_box_insert(text_box=UI_TEXTBOX_ACCESS_FREQUENCY,
+                                              message=domain_frequency_sorted[i][0] + "\n")
+
         change_password_domains = sorted(self.password_change_domains)
         for domain in change_password_domains:
-            self.ui_text_box.insert(INSERT, domain + "\n")
+            self.ui_interface.text_box_insert(text_box=UI_TEXTBOX_CHANGE_PASSWORD, message=domain + "\n")
 
     def get_chrome_passwords(self):
         # if not self.check_chrome_exists():
@@ -392,7 +400,7 @@ class Passwords:
         if len(self.password_domain_dict) == 0:
             self.get_chrome_passwords_keyring()
         if len(self.password_domain_dict) == 0:
-            self.ui_text_box.insert(INSERT, "No passwords found\n")
+            self.ui_interface.display_popup(title="", message="No passwords found.")
             return False
         self.close_sqlite_connection()
         result = self.get_chrome_history()
@@ -403,7 +411,6 @@ class Passwords:
         self.determine_password_change()
 
     def start_analysis(self):
-        self.ui_text_box.insert(INSERT, "Processing. Please Wait...\n")
         result = self.get_chrome_passwords()
         if result == False:
             return
@@ -411,5 +418,5 @@ class Passwords:
 
 
 if __name__ == '__main__':
-    tk = Tk()
-    passwords_obj = Passwords(tk)
+    tool_ui = ToolUi()
+    passwords_obj = Passwords(tool_ui)

@@ -1,0 +1,47 @@
+from Tkinter import Tk, INSERT, Button, END, LEFT, Label, Toplevel, BOTTOM, Frame
+from ToggledFrame import ToggledFrame
+import ttk
+from ScrolledText import ScrolledText
+
+
+class ToolUi():
+    def __init__(self):
+        self.tk = Tk()
+        self.tk.geometry("500x500")
+        self.text_boxes = dict()
+        self.header_frame = None
+        self.analysis_frame = None
+
+    def set_window_title(self, title):
+        self.tk.winfo_toplevel().title(title)
+
+    def render_window_frames(self):
+        self.header_frame = Frame(self.tk)
+        self.header_frame.pack(fill="x", pady=10)
+
+        self.analysis_frame = Frame(self.tk)
+        self.analysis_frame.pack(fill="x")
+
+    def render_header(self, title, buttons):
+        Label(self.tk, text=title, font=("Helvetica", 20)).pack()
+        self.render_window_frames()
+        for i in xrange(len(buttons)):
+            Button(self.header_frame, text=buttons[i]['title'], command=buttons[i]['callback']).pack(side=LEFT)
+
+    @staticmethod
+    def display_popup(title, message):
+        dialog = Toplevel()
+        dialog.title(title)
+        msg = Label(dialog, text=message, justify=LEFT)
+        msg.pack(padx=30, pady=30)
+
+    def render_frames(self, frames):
+        for frame in frames:
+            t = ToggledFrame(self.analysis_frame, text=frame['title'], relief="raised", borderwidth=1)
+            t.pack(fill="x", expand=1, pady=5, padx=2, anchor="n")
+            self.text_boxes[frame['textbox_name']] = ScrolledText(t.sub_frame)
+            self.text_boxes[frame['textbox_name']].pack()
+        self.tk.mainloop()
+
+    def text_box_insert(self, text_box, message):
+        self.text_boxes[text_box].insert(INSERT, message)
