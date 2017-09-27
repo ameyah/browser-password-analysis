@@ -10,11 +10,7 @@ from constants import *
 from top_sites import top_sites
 from datetime import datetime, timedelta, date
 from time import time
-from Tkinter import Tk, INSERT, Button, END, LEFT, Label, Toplevel
-import tkMessageBox
-from ui_components.ToggledFrame import ToggledFrame
 from ui_components.ToolUi import ToolUi
-from ScrolledText import ScrolledText
 import operator
 
 
@@ -27,9 +23,9 @@ class Passwords:
         self.password_domain_dict = defaultdict(set)
         self.domain_password_dict = defaultdict(set)
         self.domain_visits = defaultdict(list)
-        self.domain_access_frequency = dict()
+        self.domain_access_frequency = defaultdict(int)
         self.unused_accounts = set()
-        self.password_change_domains = set()
+        self.password_change_domains = defaultdict(set)
         self.weighted_avg_days_online_past = 0
         self.weighted_avg_days_online_current = 0
         self.first_online_timestamp = 0
@@ -39,6 +35,7 @@ class Passwords:
         self.days_online_index = 0
         self.start_year_weeks = 0
         self.total_weeks_history = 0
+        self.report = dict()
         self.render_ui()
 
     def render_ui(self):
@@ -72,10 +69,33 @@ class Passwords:
         self.ui_interface.display_popup(title=title, message=message)
 
     def report_click(self):
-        dialog = Toplevel()
-        dialog.title("Preview Report")
-        Button(dialog, text="Send Report", command=self.send_report).pack()
-        label = Label(dialog, width=200, height=200).pack()
+        self.report['text_box'] = UI_TEXTBOX_REPORT_PREVIEW
+        self.ui_interface.preview_report(self.report, callback=self.send_report)
+        self.ui_interface.text_box_insert(UI_TEXTBOX_REPORT_PREVIEW,
+                                          "The report data generated and sent is based only on Alexa's top 500 "
+                                          "domains.\nNo personal identifying information or information that can expose"
+                                          " the personal identity is sent.")
+        self.ui_interface.text_box_insert(UI_TEXTBOX_REPORT_PREVIEW,
+                                          "\n\nReused Passwords: " + ", ".join(self.report['reused_passwords']))
+        self.ui_interface.text_box_insert(UI_TEXTBOX_REPORT_PREVIEW,
+                                          "\n\nUnused Accounts: \n\t" + "\n\t".join(self.report['unused_accounts']))
+        self.ui_interface.text_box_insert(UI_TEXTBOX_REPORT_PREVIEW, "\n\nAccount Access Frequency:\n\t")
+        if 3 in self.report['access_frequency']:
+            self.ui_interface.text_box_insert(UI_TEXTBOX_REPORT_PREVIEW,
+                                              "Very Frequently Used Accounts:\n\t\t" + "\n\t\t".join(
+                                                  self.report['access_frequency'][3]))
+        if 2 in self.report['access_frequency']:
+            self.ui_interface.text_box_insert(UI_TEXTBOX_REPORT_PREVIEW,
+                                              "\n\tFrequently Used Accounts:\n\t\t" + "\n\t\t".join(
+                                                  self.report['access_frequency'][2]))
+        if 1 in self.report['access_frequency']:
+            self.ui_interface.text_box_insert(UI_TEXTBOX_REPORT_PREVIEW,
+                                              "\n\tIntermittently Used Accounts:\n\t\t" + "\n\t\t".join(
+                                                  self.report['access_frequency'][1]))
+        self.ui_interface.text_box_insert(UI_TEXTBOX_REPORT_PREVIEW,
+                                          "\n\nPassword Reset required domains:\n\t" + "\n\t".join(
+                                              list(self.report['unused_accounts'])))
+
 
     def send_report(self):
         pass
@@ -329,7 +349,7 @@ class Passwords:
                     WEIGHTED_AVG_CURRENT_WEIGHT * access_frequency)
             if access_frequency >= 0.4:
                 self.domain_access_frequency[domain] = 3
-                print domain + " " + str(access_frequency)
+
                 continue
 
             # determine frequent access
@@ -345,10 +365,20 @@ class Passwords:
             else:
                 self.domain_access_frequency[domain] = 1
 
-            if self.domain_access_frequency[domain] == 2:
-                print domain + " " + str(access_frequency)
-
     def determine_password_change(self):
+        for password in self.password_domain_dict:
+            frequent_domains = ()
+            password_change = set()
+            for domain in self.password_domain_dict[password]:
+                frequency = self.domain_access_frequency[domain]
+                if frequency == 2 or frequency == 3:
+                    frequent_domains += (domain,)
+                    continue
+                if domain in self.unused_accounts:
+                    password_change.add(domain)
+            if len(frequent_domains) > 0 and len(password_change) > 0:
+                self.password_change_domains[frequent_domains] = sorted(password_change)
+        """
         for domain in self.domain_access_frequency:
             frequency = self.domain_access_frequency[domain]
             if frequency == 2 or frequency == 3:
@@ -356,21 +386,29 @@ class Passwords:
                 for password in passwords:
                     for temp_domain in self.password_domain_dict[password]:
                         if temp_domain in self.unused_accounts:
-                            self.password_change_domains.add(temp_domain)
+                            self.password_change_domains[domain].add(temp_domain)
+        """
 
     def print_basic_analyses(self):
         sorted_passwords = sorted(self.password_domain_dict, key=lambda x: len(self.password_domain_dict[x]),
                                   reverse=True)
+        self.report['reused_passwords'] = []
         for password in sorted_passwords:
             self.ui_interface.text_box_insert(text_box=UI_TEXTBOX_REUSED_PASSWORDS, message=password + " => " + str(
                 len(self.password_domain_dict[password])) + "\n")
+            self.report['reused_passwords'].append(str(len(self.password_domain_dict[password])))
 
         unused_accounts = sorted(self.unused_accounts)
+        self.report['unused_accounts'] = []
         for account in unused_accounts:
             self.ui_interface.text_box_insert(text_box=UI_TEXTBOX_UNUSED_ACCOUNTS, message=account + "\n")
+            if account in top_sites:
+                self.report['unused_accounts'].append(account)
 
         domain_frequency_sorted = sorted(self.domain_access_frequency.items(), key=operator.itemgetter(1), reverse=True)
         current_frequency = 4
+
+        self.report['access_frequency'] = dict()
         for i in xrange(len(domain_frequency_sorted)):
             if current_frequency > domain_frequency_sorted[i][1]:
                 current_frequency = domain_frequency_sorted[i][1]
@@ -383,12 +421,34 @@ class Passwords:
                 if current_frequency == 3:
                     self.ui_interface.text_box_insert(text_box=UI_TEXTBOX_ACCESS_FREQUENCY,
                                                       message="\nVery Frequently accessed accounts:\n")
+                self.report['access_frequency'][current_frequency] = []
             self.ui_interface.text_box_insert(text_box=UI_TEXTBOX_ACCESS_FREQUENCY,
                                               message=domain_frequency_sorted[i][0] + "\n")
+            if domain_frequency_sorted[i][0] in top_sites:
+                self.report['access_frequency'][current_frequency].append(domain_frequency_sorted[i][0])
 
-        change_password_domains = sorted(self.password_change_domains)
-        for domain in change_password_domains:
-            self.ui_interface.text_box_insert(text_box=UI_TEXTBOX_CHANGE_PASSWORD, message=domain + "\n")
+        self.report['password_reset'] = set()
+        """
+        frequent_domain_same_password_flag = False
+        for frequent_domains in self.password_change_domains:
+            if len(frequent_domains) > 1:
+                if not frequent_domain_same_password_flag:
+                    self.ui_interface.text_box_insert(text_box=UI_TEXTBOX_CHANGE_PASSWORD,
+                                                      message="Reset the passwords of these accounts to unique passwords:\n")
+                    frequent_domain_same_password_flag = True
+                self.ui_interface.text_box_insert(text_box=UI_TEXTBOX_CHANGE_PASSWORD,
+                                                  message="\n".join(list(frequent_domains)))
+        """
+        password_change_domains = set()
+        for frequent_domains in self.password_change_domains:
+            self.ui_interface.text_box_insert(text_box=UI_TEXTBOX_CHANGE_PASSWORD,
+                                              message="\nSame password as " + ", ".join(list(frequent_domains)) + ":\n")
+            for domain in self.password_change_domains[frequent_domains]:
+                if domain not in password_change_domains:
+                    self.ui_interface.text_box_insert(text_box=UI_TEXTBOX_CHANGE_PASSWORD, message=domain + "\n")
+                    password_change_domains.add(domain)
+            if domain in top_sites:
+                self.report['password_reset'].add(domain)
 
     def get_chrome_passwords(self):
         # if not self.check_chrome_exists():

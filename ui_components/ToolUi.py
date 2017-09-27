@@ -45,3 +45,10 @@ class ToolUi():
 
     def text_box_insert(self, text_box, message):
         self.text_boxes[text_box].insert(INSERT, message)
+
+    def preview_report(self, report_data, callback):
+        dialog = Toplevel()
+        dialog.title("Preview Report")
+        Button(dialog, text="Send Report", command=callback).pack()
+        self.text_boxes[report_data['text_box']] = ScrolledText(dialog)
+        self.text_boxes[report_data['text_box']].pack()
