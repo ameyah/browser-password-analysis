@@ -96,7 +96,6 @@ class Passwords:
                                           "\n\nPassword Reset required domains:\n\t" + "\n\t".join(
                                               list(self.report['unused_accounts'])))
 
-
     def send_report(self):
         pass
 
@@ -108,7 +107,9 @@ class Passwords:
     @staticmethod
     def get_url_domain(url):
         domain_obj = tldextract.extract(url)
-        return "%s.%s" % (domain_obj.domain, domain_obj.suffix)
+        return "%s.%s.%s" % (
+            domain_obj.subdomain, domain_obj.domain, domain_obj.suffix) if domain_obj.subdomain else "%s.%s" % (
+            domain_obj.domain, domain_obj.suffix)
 
     @staticmethod
     def get_timestamp_past(current_datetime):
@@ -205,7 +206,7 @@ class Passwords:
 
     def get_chrome_passwords_sqlite_osx(self, login_data):
         for url, user_name, password in login_data:
-            if password == '':
+            if password.strip() == '':
                 continue
             domain = self.get_url_domain(url)
             self.store_passwords_domain(domain, password)
@@ -246,6 +247,8 @@ class Passwords:
                 if attr and 'username_value' in attr:
                     domain = self.get_url_domain(attr['origin_url'])
                     password = item.get_secret()
+                    if password.strip() == "":
+                        continue
                     self.store_passwords_domain(domain, password)
 
     def get_chrome_history(self):
