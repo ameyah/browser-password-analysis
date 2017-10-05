@@ -12,6 +12,9 @@ from datetime import datetime, timedelta, date
 from time import time
 from ui_components.ToolUi import ToolUi
 import operator
+import json
+import urllib2
+from utils import *
 
 
 class Passwords:
@@ -50,10 +53,19 @@ class Passwords:
 
         self.ui_interface.render_header(title, buttons)
         toggled_frames = [
-            {"title": "Reused Passwords", "textbox_name": UI_TEXTBOX_REUSED_PASSWORDS},
-            {"title": "Unused Accounts", "textbox_name": UI_TEXTBOX_UNUSED_ACCOUNTS},
-            {"title": "Account Access Frequency", "textbox_name": UI_TEXTBOX_ACCESS_FREQUENCY},
-            {"title": "Accounts needing password reset", "textbox_name": UI_TEXTBOX_CHANGE_PASSWORD},
+            {"title": "Reused Passwords", "textbox_name": UI_TEXTBOX_REUSED_PASSWORDS,
+             "tooltip": "Hashed versions of the passwords that are reused."},
+            {"title": "Unused Accounts", "textbox_name": UI_TEXTBOX_UNUSED_ACCOUNTS,
+             "tooltip": "Accounts that haven't been used in the past 3 months. "
+                        "If don't use these accounts, please close the account, or reset their passwords."},
+            {"title": "Account Access Frequency", "textbox_name": UI_TEXTBOX_ACCESS_FREQUENCY,
+             "tooltip": "Accounts as per frequency of use:\n\n"
+                        "Very Frequently Used Accounts: Accounts that are accessed almost daily.\n\n"
+                        "Frequently Used Accounts: Accounts that are accessed regularly.\n\n"
+                        "Intermittently Used Accounts: Accounts that are accessed within the last 3 months."},
+            {"title": "Accounts needing password reset", "textbox_name": UI_TEXTBOX_CHANGE_PASSWORD,
+             "tooltip": "Accounts that haven't been used in the past 3 months, "
+                        "but share a password with a frequently used account."},
         ]
 
         self.ui_interface.render_frames(toggled_frames)
@@ -76,9 +88,12 @@ class Passwords:
                                           "domains.\nNo personal identifying information or information that can expose"
                                           " the personal identity is sent.")
         self.ui_interface.text_box_insert(UI_TEXTBOX_REPORT_PREVIEW,
-                                          "\n\nReused Passwords: " + ", ".join(self.report['reused_passwords']))
+                                          "\n\nReused Passwords: " + ", ".join(
+                                              str(x) for x in self.report['reused_passwords']['reuse']))
         self.ui_interface.text_box_insert(UI_TEXTBOX_REPORT_PREVIEW,
-                                          "\n\nUnused Accounts: \n\t" + "\n\t".join(self.report['unused_accounts']))
+                                          "\n\nUnused Accounts: \n\tTotal - " + str(self.report['unused_accounts'][
+                                              'count']) + "\n\t" + "\n\t".join(
+                                              str(x) for x in self.report['unused_accounts']['domains']))
         self.ui_interface.text_box_insert(UI_TEXTBOX_REPORT_PREVIEW, "\n\nAccount Access Frequency:\n\t")
         if 3 in self.report['access_frequency']:
             self.ui_interface.text_box_insert(UI_TEXTBOX_REPORT_PREVIEW,
@@ -93,11 +108,18 @@ class Passwords:
                                               "\n\tIntermittently Used Accounts:\n\t\t" + "\n\t\t".join(
                                                   self.report['access_frequency'][1]))
         self.ui_interface.text_box_insert(UI_TEXTBOX_REPORT_PREVIEW,
-                                          "\n\nPassword Reset required domains:\n\t" + "\n\t".join(
-                                              list(self.report['unused_accounts'])))
+                                          "\n\nPassword Reset required domains:\n\tTotal - " + str(
+                                              self.report['password_reset']['count']) + "\n\t" + "\n\t".join(
+                                              self.report['password_reset']['domains']))
 
     def send_report(self):
-        pass
+        # url = "http://localhost/browser_tool_dump.php"
+        url = "https://steel.isi.edu/Projects/PASS/browser_tool_dump.php"
+        req = urllib2.Request(url)
+        req.add_header('Content-Type', 'application/json')
+        print json.dumps(self.report)
+        response = urllib2.urlopen(req, json.dumps(self.report))
+        print response
 
     def detect_os(self):
         self.os = platform.system()
@@ -105,11 +127,16 @@ class Passwords:
             self.os = platform.dist()[0]
 
     @staticmethod
-    def get_url_domain(url):
+    def get_url_sub_domain(url):
         domain_obj = tldextract.extract(url)
         return "%s.%s.%s" % (
             domain_obj.subdomain, domain_obj.domain, domain_obj.suffix) if domain_obj.subdomain else "%s.%s" % (
             domain_obj.domain, domain_obj.suffix)
+
+    @staticmethod
+    def get_url_domain(url):
+        domain_obj = tldextract.extract(url)
+        return "%s.%s" % (domain_obj.domain, domain_obj.suffix)
 
     @staticmethod
     def get_timestamp_past(current_datetime):
@@ -184,7 +211,9 @@ class Passwords:
             return self.conn.execute(sql)
         except sqlite3.OperationalError:
             self.ui_interface.display_popup(title="Error",
-                                            message="Please exit Google Chrome before running this script.")
+                                            message="You must close your Chrome windows temporarily so we can access "
+                                                    "your password manager and history data. You can reopen the browser"
+                                                    " when the analysis succeeds.")
             raise sqlite3.OperationalError()
 
     def store_passwords_domain(self, domain, password):
@@ -200,7 +229,7 @@ class Passwords:
 
         for url, user_name, password in login_data:
             password = win32crypt.CryptUnprotectData(password, None, None, None, 0)[1]
-            domain = self.get_url_domain(url)
+            domain = self.get_url_sub_domain(url)
             password = md5(password).hexdigest()
             self.store_passwords_domain(domain, password)
 
@@ -208,7 +237,7 @@ class Passwords:
         for url, user_name, password in login_data:
             if password.strip() == '':
                 continue
-            domain = self.get_url_domain(url)
+            domain = self.get_url_sub_domain(url)
             self.store_passwords_domain(domain, password)
 
     def get_chrome_passwords_sqlite(self):
@@ -245,7 +274,7 @@ class Passwords:
                 item = gnomekeyring.item_get_info_sync(keyring, id)
                 attr = gnomekeyring.item_get_attributes_sync(keyring, id)
                 if attr and 'username_value' in attr:
-                    domain = self.get_url_domain(attr['origin_url'])
+                    domain = self.get_url_sub_domain(attr['origin_url'])
                     password = item.get_secret()
                     if password.strip() == "":
                         continue
@@ -282,7 +311,7 @@ class Passwords:
                     self.total_weeks_history += 1
                 prev_log_date = log_date
 
-            domain = self.get_url_domain(history[0])
+            domain = self.get_url_sub_domain(history[0])
             if domain in self.domain_password_dict:
                 if len(self.domain_visits[domain]) == 0:
                     self.domain_visits[domain].append(visit_time)
@@ -393,20 +422,27 @@ class Passwords:
         """
 
     def print_basic_analyses(self):
+        self.ui_interface.clear_text_boxes()
         sorted_passwords = sorted(self.password_domain_dict, key=lambda x: len(self.password_domain_dict[x]),
                                   reverse=True)
-        self.report['reused_passwords'] = []
+        self.report['reused_passwords'] = {
+            'count': len(sorted_passwords),
+            'reuse': []
+        }
         for password in sorted_passwords:
             self.ui_interface.text_box_insert(text_box=UI_TEXTBOX_REUSED_PASSWORDS, message=password + " => " + str(
                 len(self.password_domain_dict[password])) + "\n")
-            self.report['reused_passwords'].append(str(len(self.password_domain_dict[password])))
+            self.report['reused_passwords']['reuse'].append(len(self.password_domain_dict[password]))
 
         unused_accounts = sorted(self.unused_accounts)
-        self.report['unused_accounts'] = []
+        self.report['unused_accounts'] = {
+            'count': len(unused_accounts),
+            'domains': []
+        }
         for account in unused_accounts:
             self.ui_interface.text_box_insert(text_box=UI_TEXTBOX_UNUSED_ACCOUNTS, message=account + "\n")
-            if account in top_sites:
-                self.report['unused_accounts'].append(account)
+            if self.get_url_domain(account) in top_sites:
+                self.report['unused_accounts']['domains'].append(account)
 
         domain_frequency_sorted = sorted(self.domain_access_frequency.items(), key=operator.itemgetter(1), reverse=True)
         current_frequency = 4
@@ -427,10 +463,13 @@ class Passwords:
                 self.report['access_frequency'][current_frequency] = []
             self.ui_interface.text_box_insert(text_box=UI_TEXTBOX_ACCESS_FREQUENCY,
                                               message=domain_frequency_sorted[i][0] + "\n")
-            if domain_frequency_sorted[i][0] in top_sites:
+            if self.get_url_domain(domain_frequency_sorted[i][0]) in top_sites:
                 self.report['access_frequency'][current_frequency].append(domain_frequency_sorted[i][0])
 
-        self.report['password_reset'] = set()
+        self.report['password_reset'] = {
+            'count': 0,
+            'domains': set()
+        }
         """
         frequent_domain_same_password_flag = False
         for frequent_domains in self.password_change_domains:
@@ -446,12 +485,15 @@ class Passwords:
         for frequent_domains in self.password_change_domains:
             self.ui_interface.text_box_insert(text_box=UI_TEXTBOX_CHANGE_PASSWORD,
                                               message="\nSame password as " + ", ".join(list(frequent_domains)) + ":\n")
+            self.report['password_reset']['count'] += len(self.password_change_domains[frequent_domains])
             for domain in self.password_change_domains[frequent_domains]:
                 if domain not in password_change_domains:
                     self.ui_interface.text_box_insert(text_box=UI_TEXTBOX_CHANGE_PASSWORD, message=domain + "\n")
                     password_change_domains.add(domain)
-            if domain in top_sites:
-                self.report['password_reset'].add(domain)
+                if self.get_url_domain(domain) in top_sites:
+                    self.report['password_reset']['domains'].add(domain)
+        self.report['password_reset']['domains'] = list(self.report['password_reset']['domains'])
+        self.ui_interface.set_info_label_text("Password Analysis complete. Please expand the below sections.")
 
     def get_chrome_passwords(self):
         # if not self.check_chrome_exists():
