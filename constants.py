@@ -11,3 +11,6 @@ UI_TEXTBOX_UNUSED_ACCOUNTS = "unused_accounts"
 UI_TEXTBOX_ACCESS_FREQUENCY = "access_frequency"
 UI_TEXTBOX_CHANGE_PASSWORD = "change_password"
 UI_TEXTBOX_REPORT_PREVIEW = "preview_report"
+
+TEXTBOX_STYLE_INFO = "info"
+TEXTBOX_STYLE_HEADING = "heading"
