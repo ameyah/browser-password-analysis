@@ -53,19 +53,10 @@ class Passwords:
 
         self.ui_interface.render_header(title, buttons)
         toggled_frames = [
-            {"title": "Reused Passwords", "textbox_name": UI_TEXTBOX_REUSED_PASSWORDS,
-             "tooltip": "Hashed versions of the passwords that are reused."},
-            {"title": "Unused Accounts", "textbox_name": UI_TEXTBOX_UNUSED_ACCOUNTS,
-             "tooltip": "Accounts that haven't been used in the past 3 months. "
-                        "If don't use these accounts, please close the account, or reset their passwords."},
-            {"title": "Account Access Frequency", "textbox_name": UI_TEXTBOX_ACCESS_FREQUENCY,
-             "tooltip": "Accounts as per frequency of use:\n\n"
-                        "Very Frequently Used Accounts: Accounts that are accessed almost daily.\n\n"
-                        "Frequently Used Accounts: Accounts that are accessed regularly.\n\n"
-                        "Intermittently Used Accounts: Accounts that are accessed within the last 3 months."},
-            {"title": "Accounts needing password reset", "textbox_name": UI_TEXTBOX_CHANGE_PASSWORD,
-             "tooltip": "Accounts that haven't been used in the past 3 months, "
-                        "but share a password with a frequently used account."},
+            {"title": "Reused Passwords", "textbox_name": UI_TEXTBOX_REUSED_PASSWORDS},
+            {"title": "Unused Accounts", "textbox_name": UI_TEXTBOX_UNUSED_ACCOUNTS},
+            {"title": "Account Access Frequency", "textbox_name": UI_TEXTBOX_ACCESS_FREQUENCY},
+            {"title": "Accounts needing password reset", "textbox_name": UI_TEXTBOX_CHANGE_PASSWORD},
         ]
 
         self.ui_interface.render_frames(toggled_frames)
@@ -429,6 +420,15 @@ class Passwords:
             'count': len(sorted_passwords),
             'reuse': []
         }
+        frequently_reused_count = 0
+        for password in sorted_passwords:
+            if len(self.password_domain_dict[password]) >= 3:
+                frequently_reused_count += 1
+        if frequently_reused_count > 0:
+            self.ui_interface.text_box_insert(text_box=UI_TEXTBOX_REUSED_PASSWORDS, message="You have " + str(
+                frequently_reused_count) + " passwords you are heavily reusing. See the top " + str(
+                frequently_reused_count) + " entries for the hash of the password and the number of accounts "
+                                           "where it is used.\n\n")
         for password in sorted_passwords:
             self.ui_interface.text_box_insert(text_box=UI_TEXTBOX_REUSED_PASSWORDS, message=password + " => " + str(
                 len(self.password_domain_dict[password])) + "\n")
@@ -439,6 +439,10 @@ class Passwords:
             'count': len(unused_accounts),
             'domains': []
         }
+        self.ui_interface.text_box_insert(text_box=UI_TEXTBOX_UNUSED_ACCOUNTS,
+                                          message="The accounts on the following websites haven't been used in the past"
+                                                  " 3 months. If you don't use these accounts, please close the "
+                                                  "accounts, or reset their passwords.\n\n")
         for account in unused_accounts:
             self.ui_interface.text_box_insert(text_box=UI_TEXTBOX_UNUSED_ACCOUNTS, message=account + "\n")
             if self.get_url_domain(account) in top_sites:
@@ -446,6 +450,13 @@ class Passwords:
 
         domain_frequency_sorted = sorted(self.domain_access_frequency.items(), key=operator.itemgetter(1), reverse=True)
         current_frequency = 4
+
+        self.ui_interface.text_box_insert(text_box=UI_TEXTBOX_ACCESS_FREQUENCY,
+                                          message="Accounts as per frequency of use:\n\nVery Frequently Used Accounts: "
+                                                  "Accounts that are accessed almost daily."
+                                                  "\n\nFrequently Used Accounts: Accounts that are accessed regularly."
+                                                  "\n\nIntermittently Used Accounts: Accounts that are accessed within "
+                                                  "the last 3 months.\n\n")
 
         self.report['access_frequency'] = dict()
         for i in xrange(len(domain_frequency_sorted)):
@@ -481,6 +492,10 @@ class Passwords:
                 self.ui_interface.text_box_insert(text_box=UI_TEXTBOX_CHANGE_PASSWORD,
                                                   message="\n".join(list(frequent_domains)))
         """
+
+        self.ui_interface.text_box_insert(text_box=UI_TEXTBOX_CHANGE_PASSWORD,
+                                          message="Accounts that haven't been used in the past 3 months, but share a "
+                                                  "password with a frequently used account.\n\n")
         password_change_domains = set()
         for frequent_domains in self.password_change_domains:
             self.ui_interface.text_box_insert(text_box=UI_TEXTBOX_CHANGE_PASSWORD,
