@@ -1,4 +1,4 @@
-from Tkinter import Tk, INSERT, Button, END, LEFT, Label, Toplevel, BOTTOM, Frame, StringVar, WORD
+from Tkinter import Tk, INSERT, Button, END, LEFT, Label, Toplevel, BOTTOM, Frame, StringVar, WORD, Message
 from ToggledFrame import ToggledFrame
 import ttk
 from ScrolledText import ScrolledText
@@ -14,6 +14,7 @@ class ToolUi():
         self.analysis_frame = None
         self.info_label = None
         self.info_label_text = StringVar()
+        self.report_dialog = None
 
     def set_window_title(self, title):
         self.tk.winfo_toplevel().title(title)
@@ -30,7 +31,7 @@ class ToolUi():
 
     def render_header(self, title, buttons):
         Label(self.tk, text=title, font=("Helvetica", 20)).pack()
-        Label(self.tk, textvariable=self.info_label_text, fg="red", justify=LEFT).pack()
+        Message(self.tk, textvariable=self.info_label_text, fg="red", justify=LEFT, width=500).pack()
         self.render_window_frames()
         for i in xrange(len(buttons)):
             Button(self.header_frame, text=buttons[i]['title'], command=buttons[i]['callback']).pack(side=LEFT)
@@ -48,7 +49,8 @@ class ToolUi():
             t.pack(fill="x", expand=1, pady=5, padx=2, anchor="n")
             self.text_boxes[frame['textbox_name']] = ScrolledText(t.sub_frame, wrap=WORD)
             self.text_boxes[frame['textbox_name']].tag_configure(TEXTBOX_STYLE_INFO, foreground='green')
-            self.text_boxes[frame['textbox_name']].tag_configure(TEXTBOX_STYLE_HEADING, font=('Verdana', 10, 'bold'))
+            self.text_boxes[frame['textbox_name']].tag_configure(TEXTBOX_STYLE_HEADING, font=('Verdana', 10),
+                                                                 foreground='orange')
             self.text_boxes[frame['textbox_name']].pack()
         self.tk.mainloop()
 
@@ -63,8 +65,11 @@ class ToolUi():
             self.text_boxes[text_box].delete(1.0, END)
 
     def preview_report(self, report_data, callback):
-        dialog = Toplevel()
-        dialog.title("Preview Report")
-        Button(dialog, text="Send Report", command=callback).pack()
-        self.text_boxes[report_data['text_box']] = ScrolledText(dialog)
+        self.report_dialog = Toplevel()
+        self.report_dialog.title("Preview Report")
+        Button(self.report_dialog, text="Send Report", command=callback).pack()
+        self.text_boxes[report_data['text_box']] = ScrolledText(self.report_dialog)
         self.text_boxes[report_data['text_box']].pack()
+
+    def close_report_dialog(self):
+        self.report_dialog.destroy()

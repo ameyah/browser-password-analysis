@@ -23,7 +23,7 @@ class Passwords:
         self.conn = None
         self.os = None
         self.detect_os()
-        self.password_domain_dict = defaultdict(set)
+        self.password_domain_dict = defaultdict(lambda: defaultdict(list))
         self.domain_password_dict = defaultdict(set)
         self.domain_visits = defaultdict(list)
         self.domain_access_frequency = defaultdict(int)
@@ -52,6 +52,9 @@ class Passwords:
         ]
 
         self.ui_interface.render_header(title, buttons)
+        self.ui_interface.set_info_label_text(
+            "You must close your Chrome windows temporarily, so we can access your password manager and history data. "
+            "You can reopen the browser in a few seconds.")
         toggled_frames = [
             {"title": "Reused Passwords", "textbox_name": UI_TEXTBOX_REUSED_PASSWORDS},
             {"title": "Unused Accounts", "textbox_name": UI_TEXTBOX_UNUSED_ACCOUNTS},
@@ -110,7 +113,15 @@ class Passwords:
         req.add_header('Content-Type', 'application/json')
         print json.dumps(self.report)
         response = urllib2.urlopen(req, json.dumps(self.report))
-        print response
+        response_code = response.getcode()
+        print "Response - " + str(response_code)
+        if response_code == 200:
+            self.ui_interface.display_popup(title="Success",
+                                            message="Thank you for sharing the data summary!")
+            self.ui_interface.close_report_dialog()
+        else:
+            self.ui_interface.display_popup(title="Error",
+                                            message="There was an issue sending the data summary.")
 
     def detect_os(self):
         self.os = platform.system()
@@ -207,10 +218,10 @@ class Passwords:
                                                     " when the analysis succeeds.")
             raise sqlite3.OperationalError()
 
-    def store_passwords_domain(self, domain, password):
+    def store_passwords_domain(self, domain, username, password):
         hashed_password = sha512(password).hexdigest()
         hashed_password = md5(hashed_password).hexdigest()
-        self.password_domain_dict[hashed_password].add(domain)
+        self.password_domain_dict[hashed_password][domain].append(username)
         self.domain_password_dict[domain].add(hashed_password)
         # Remove from unused accounts when we find a visit that is within the last 90 days
         self.unused_accounts.add(domain)
@@ -222,14 +233,14 @@ class Passwords:
             password = win32crypt.CryptUnprotectData(password, None, None, None, 0)[1]
             domain = self.get_url_sub_domain(url)
             password = md5(password).hexdigest()
-            self.store_passwords_domain(domain, password)
+            self.store_passwords_domain(domain, user_name, password)
 
     def get_chrome_passwords_sqlite_osx(self, login_data):
         for url, user_name, password in login_data:
             if password.strip() == '':
                 continue
             domain = self.get_url_sub_domain(url)
-            self.store_passwords_domain(domain, password)
+            self.store_passwords_domain(domain, user_name, password)
 
     def get_chrome_passwords_sqlite(self):
         path = self.get_chrome_sqlite_login_data_path()
@@ -261,15 +272,17 @@ class Passwords:
         for keyring in gnomekeyring.list_keyring_names_sync():
             if keyring != "login":
                 continue
+
             for id in gnomekeyring.list_item_ids_sync(keyring):
                 item = gnomekeyring.item_get_info_sync(keyring, id)
                 attr = gnomekeyring.item_get_attributes_sync(keyring, id)
                 if attr and 'username_value' in attr:
+                    username = attr['username_value']
                     domain = self.get_url_sub_domain(attr['origin_url'])
                     password = item.get_secret()
                     if password.strip() == "":
                         continue
-                    self.store_passwords_domain(domain, password)
+                    self.store_passwords_domain(domain, username, password)
 
     def get_chrome_history(self):
         path = self.get_chrome_sqlite_history_path()
@@ -394,11 +407,12 @@ class Passwords:
             password_change = set()
             for domain in self.password_domain_dict[password]:
                 frequency = self.domain_access_frequency[domain]
+                usernames = self.password_domain_dict[password][domain]
                 if frequency == 2 or frequency == 3:
-                    frequent_domains += (domain,)
+                    frequent_domains += (domain + " (Username - " + ", ".join(usernames) + ")", )
                     continue
                 if domain in self.unused_accounts:
-                    password_change.add(domain)
+                    password_change.add((domain, ", ".join(usernames),))
             if len(frequent_domains) > 0 and len(password_change) > 0:
                 self.password_change_domains[frequent_domains] = sorted(password_change)
         """
@@ -504,12 +518,21 @@ class Passwords:
         password_change_domains = set()
         for frequent_domains in self.password_change_domains:
             self.ui_interface.text_box_insert(text_box=UI_TEXTBOX_CHANGE_PASSWORD,
-                                              message="\nSame password as " + ", ".join(list(frequent_domains)) + ":\n",
+                                              message="\nSame password as \n   " + "\n   ".join(
+                                                  frequent_domains) + "\n",
                                               text_style=TEXTBOX_STYLE_HEADING)
             self.report['password_reset']['count'] += len(self.password_change_domains[frequent_domains])
-            for domain in self.password_change_domains[frequent_domains]:
+            for domain_info in self.password_change_domains[frequent_domains]:
+                domain = domain_info[0]
+                usernames = domain_info[1:]
+                usernames = [username for username in usernames if username != ""]
                 if domain not in password_change_domains:
-                    self.ui_interface.text_box_insert(text_box=UI_TEXTBOX_CHANGE_PASSWORD, message=domain + "\n")
+                    domain_username = domain
+                    if len(usernames) > 0:
+                        domain_username += " (Username - " + ", ".join(usernames) + ")\n"
+                    else:
+                        domain_username += "\n"
+                    self.ui_interface.text_box_insert(text_box=UI_TEXTBOX_CHANGE_PASSWORD, message=domain_username)
                     password_change_domains.add(domain)
                 if self.get_url_domain(domain) in top_sites:
                     self.report['password_reset']['domains'].add(domain)
