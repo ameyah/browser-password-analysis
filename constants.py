@@ -14,3 +14,7 @@ UI_TEXTBOX_REPORT_PREVIEW = "preview_report"
 
 TEXTBOX_STYLE_INFO = "info"
 TEXTBOX_STYLE_HEADING = "heading"
+
+STATE_INITIAL = 0  # Analysis not started
+STATE_ANALYSIS = 1  # Analysis completed but report not sent
+STATE_DONE = 2  # Report sent

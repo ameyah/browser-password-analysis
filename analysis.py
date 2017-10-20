@@ -20,6 +20,8 @@ from utils import *
 class Passwords:
     def __init__(self, tk_interface):
         self.ui_interface = tk_interface
+        self.tool_state = STATE_INITIAL
+        self.ui_interface.override_x_callback(self.override_x)
         self.conn = None
         self.os = None
         self.detect_os()
@@ -63,6 +65,27 @@ class Passwords:
         ]
 
         self.ui_interface.render_frames(toggled_frames)
+
+    def override_x(self):
+        if self.tool_state == STATE_INITIAL:
+            if self.ui_interface.display_messagebox_yesno("Browser Password Analysis",
+                                                          "It looks like you haven't seen your password analysis "
+                                                          "results. To analyze your passwords, press the 'Start' "
+                                                          "button and wait for a few seconds.\n\nAre you sure you "
+                                                          "want to exit?"):
+                    self.ui_interface.destroy_main()
+        elif self.tool_state == STATE_ANALYSIS:
+            if not self.ui_interface.display_messagebox_yesno("Browser Password Analysis",
+                                                          "Would you like to share the summarized results for "
+                                                          "research purposes. We only collect minimal information for "
+                                                          "research analysis. You can see what data we collect before "
+                                                          "sharing your data.\n\nWould you like to preview (and send) "
+                                                          "the data?"):
+                    self.ui_interface.destroy_main()
+            else:
+                self.report_click()
+        else:
+            self.ui_interface.destroy_main()
 
     def about_click(self):
         title = "About this tool"
@@ -122,6 +145,7 @@ class Passwords:
         else:
             self.ui_interface.display_popup(title="Error",
                                             message="There was an issue sending the data summary.")
+        self.tool_state = STATE_DONE
 
     def detect_os(self):
         self.os = platform.system()
@@ -226,22 +250,6 @@ class Passwords:
         # Remove from unused accounts when we find a visit that is within the last 90 days
         self.unused_accounts.add(domain)
 
-    def get_chrome_passwords_sqlite_windows(self, login_data):
-        import win32crypt
-
-        for url, user_name, password in login_data:
-            password = win32crypt.CryptUnprotectData(password, None, None, None, 0)[1]
-            domain = self.get_url_sub_domain(url)
-            password = md5(password).hexdigest()
-            self.store_passwords_domain(domain, user_name, password)
-
-    def get_chrome_passwords_sqlite_osx(self, login_data):
-        for url, user_name, password in login_data:
-            if password.strip() == '':
-                continue
-            domain = self.get_url_sub_domain(url)
-            self.store_passwords_domain(domain, user_name, password)
-
     def get_chrome_passwords_sqlite(self):
         path = self.get_chrome_sqlite_login_data_path()
         self.get_sqlite_connection(path)
@@ -253,16 +261,29 @@ class Passwords:
         count = cursor.fetchone()[0]
         if count == 0:
             return
-        sql = '''SELECT origin_url, username_value, hex(password_value) FROM logins WHERE origin_url != ""'''
+        sql = '''SELECT origin_url, username_value, hex(password_value), date_created FROM logins
+              WHERE origin_url != ""'''
         try:
             cursor = self.execute_sqlite(sql)
         except sqlite3.OperationalError:
             return
         login_data = cursor.fetchall()
-        if self.os == WINDOWS:
-            self.get_chrome_passwords_sqlite_windows(login_data)
-        elif self.os == OSX:
-            self.get_chrome_passwords_sqlite_osx(login_data)
+        domain_username_password_timestamp = dict()
+        for url, username, password, date_created in login_data:
+            if password.strip() == "":
+                continue
+            domain = self.get_url_sub_domain(url)
+            key = (domain, username,)
+            value = (password, date_created,)
+            if key in domain_username_password_timestamp:
+                if date_created >= domain_username_password_timestamp[key][1]:
+                    domain_username_password_timestamp[key] = value
+            else:
+                domain_username_password_timestamp[key] = value
+
+        for domain_username in domain_username_password_timestamp:
+            self.store_passwords_domain(domain_username[0], domain_username[1],
+                                        domain_username_password_timestamp[domain_username][0])
 
     def get_chrome_passwords_keyring(self):
         if self.os != UBUNTU:
@@ -272,17 +293,28 @@ class Passwords:
         for keyring in gnomekeyring.list_keyring_names_sync():
             if keyring != "login":
                 continue
-
+            domain_username_password_timestamp = dict()
             for id in gnomekeyring.list_item_ids_sync(keyring):
                 item = gnomekeyring.item_get_info_sync(keyring, id)
                 attr = gnomekeyring.item_get_attributes_sync(keyring, id)
                 if attr and 'username_value' in attr:
                     username = attr['username_value']
-                    domain = self.get_url_sub_domain(attr['origin_url'])
-                    password = item.get_secret()
-                    if password.strip() == "":
-                        continue
-                    self.store_passwords_domain(domain, username, password)
+                else:
+                    continue
+                domain = self.get_url_sub_domain(attr['origin_url'])
+                password = item.get_secret()
+                if password.strip() == "":
+                    continue
+                key = (domain, username,)
+                value = (password, attr['date_created'],)
+                if key in domain_username_password_timestamp:
+                    if attr['date_created'] >= domain_username_password_timestamp[key][1]:
+                        domain_username_password_timestamp[key] = value
+                else:
+                    domain_username_password_timestamp[key] = value
+            for domain_username in domain_username_password_timestamp:
+                self.store_passwords_domain(domain_username[0], domain_username[1],
+                                            domain_username_password_timestamp[domain_username][0])
 
     def get_chrome_history(self):
         path = self.get_chrome_sqlite_history_path()
@@ -415,16 +447,6 @@ class Passwords:
                     password_change.add((domain, ", ".join(usernames),))
             if len(frequent_domains) > 0 and len(password_change) > 0:
                 self.password_change_domains[frequent_domains] = sorted(password_change)
-        """
-        for domain in self.domain_access_frequency:
-            frequency = self.domain_access_frequency[domain]
-            if frequency == 2 or frequency == 3:
-                passwords = self.domain_password_dict[domain]
-                for password in passwords:
-                    for temp_domain in self.password_domain_dict[password]:
-                        if temp_domain in self.unused_accounts:
-                            self.password_change_domains[domain].add(temp_domain)
-        """
 
     def print_basic_analyses(self):
         self.ui_interface.clear_text_boxes()
@@ -564,6 +586,7 @@ class Passwords:
         if result == False:
             return
         self.print_basic_analyses()
+        self.tool_state = STATE_ANALYSIS
 
 
 if __name__ == '__main__':

@@ -1,4 +1,5 @@
 from Tkinter import Tk, INSERT, Button, END, LEFT, Label, Toplevel, BOTTOM, Frame, StringVar, WORD, Message
+import tkMessageBox
 from ToggledFrame import ToggledFrame
 import ttk
 from ScrolledText import ScrolledText
@@ -15,6 +16,12 @@ class ToolUi():
         self.info_label = None
         self.info_label_text = StringVar()
         self.report_dialog = None
+
+    def destroy_main(self):
+        self.tk.destroy()
+
+    def override_x_callback(self, callback):
+        self.tk.protocol('WM_DELETE_WINDOW', callback)
 
     def set_window_title(self, title):
         self.tk.winfo_toplevel().title(title)
@@ -38,10 +45,17 @@ class ToolUi():
 
     @staticmethod
     def display_popup(title, message):
+        tkMessageBox.showinfo(title, message)
+        """
         dialog = Toplevel()
         dialog.title(title)
         msg = Label(dialog, text=message, justify=LEFT)
         msg.pack(padx=30, pady=30)
+        """
+
+    @staticmethod
+    def display_messagebox_yesno(title, message):
+        return tkMessageBox.askyesno(title, message)
 
     def render_frames(self, frames):
         for frame in frames:
