@@ -35,7 +35,7 @@ class Passwords:
         self.weighted_avg_days_online_current = 0
         self.first_online_timestamp = 0
         self.last_online_timestamp = 0
-        self.weighted_avg_timestamp_past = int((datetime.now() - timedelta(days=14)).strftime("%s"))
+        self.weighted_avg_timestamp_past = int(int((datetime.now() - timedelta(days=14)).strftime("%S")))
         self.days_online_timestamp = []
         self.days_online_index = 0
         self.start_year_weeks = 0
@@ -132,6 +132,11 @@ class Passwords:
     def send_report(self):
         # url = "http://localhost/browser_tool_dump.php"
         url = "https://steel.isi.edu/Projects/PASS/browser_tool_dump.php"
+        if os.path.exists(APP_DATA_PATH):
+            with open(APP_DATA_PATH, "r") as fp:
+                user_id = fp.read().strip()
+                if user_id.strip() != "":
+                    url += "?id=" + user_id
         req = urllib2.Request(url)
         req.add_header('Content-Type', 'application/json')
         print json.dumps(self.report)
@@ -139,6 +144,11 @@ class Passwords:
         response_code = response.getcode()
         print "Response - " + str(response_code)
         if response_code == 200:
+            user_id = response.read()
+            if user_id.strip() != "":
+                with open(APP_DATA_PATH, "w") as fp:
+                    fp.write(user_id)
+
             self.ui_interface.display_popup(title="Success",
                                             message="Thank you for sharing the data summary!")
             self.ui_interface.close_report_dialog()
@@ -281,6 +291,7 @@ class Passwords:
             else:
                 domain_username_password_timestamp[key] = value
 
+        print domain_username_password_timestamp
         for domain_username in domain_username_password_timestamp:
             self.store_passwords_domain(domain_username[0], domain_username[1],
                                         domain_username_password_timestamp[domain_username][0])
@@ -340,8 +351,8 @@ class Passwords:
             log_date = datetime.fromtimestamp(visit_time)
             log_date = log_date.date()
             if log_date < prev_log_date:
-                prev_week_number = int(prev_log_date.strftime("%V"))
-                current_week_number = int(log_date.strftime("%V"))
+                prev_week_number = int(prev_log_date.isocalendar()[1])
+                current_week_number = int(log_date.isocalendar()[1])
                 self.increment_days_online(visit_time)
                 if current_week_number != prev_week_number:
                     self.total_weeks_history += 1
@@ -383,8 +394,8 @@ class Passwords:
             past_datetime_end = self.get_timestamp_past(current_datetime)
             past_datetime_start = self.get_timestamp_past(past_datetime_end)
 
-            past_timestamp_start = int(past_datetime_start.strftime("%s"))
-            past_timestamp_end = int(past_datetime_end.strftime("%s"))
+            past_timestamp_start = int(int(past_datetime_start.strftime("%S")))
+            past_timestamp_end = int(int(past_datetime_end.strftime("%S")))
             past_days_accessed = self.get_days_accessed(domain, start=past_timestamp_start,
                                                         end=past_timestamp_end)
             current_days_accessed = self.get_days_accessed(domain, start=past_timestamp_end + 1,
@@ -406,7 +417,7 @@ class Passwords:
             while past_timestamp_end >= self.first_online_timestamp:
                 past_timestamp_end = past_timestamp_start - 1
                 past_datetime_start = self.get_timestamp_past(past_datetime_start)
-                past_timestamp_start = int(past_datetime_start.strftime("%s"))
+                past_timestamp_start = int(int(past_datetime_start.strftime("%S")))
                 past_days_accessed = self.get_days_accessed(domain, start=past_timestamp_start, end=past_timestamp_end)
                 past_days_online = self.get_days_online_after_timestamp(past_timestamp_start)
                 try:
@@ -424,7 +435,7 @@ class Passwords:
             prev_week_number = None
             weeks_accessed = 0
             for timestamp in reversed(self.domain_visits[domain]):
-                current_week_number = int(datetime.fromtimestamp(timestamp).strftime("%V"))
+                current_week_number = int(datetime.fromtimestamp(timestamp).isocalendar()[1])
                 if prev_week_number != current_week_number:
                     prev_week_number = current_week_number
                     weeks_accessed += 1
@@ -590,5 +601,7 @@ class Passwords:
 
 
 if __name__ == '__main__':
+    if not os.path.exists(APP_PATH):
+        os.makedirs(APP_PATH)
     tool_ui = ToolUi()
     passwords_obj = Passwords(tool_ui)

@@ -1,3 +1,10 @@
+from appdirs import user_data_dir
+import os
+
+
+APP_PATH = user_data_dir("pass-analysis", "ameyah")
+APP_DATA_PATH = os.path.join(APP_PATH, "id")
+
 WINDOWS = "Windows"
 UBUNTU = "Ubuntu"
 LINUX = "Linux"
