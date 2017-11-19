@@ -3,7 +3,6 @@ from subprocess import Popen, PIPE
 import platform
 import commands
 from collections import defaultdict
-import os
 from hashlib import md5, sha512
 from tldextract import tldextract
 from constants import *
@@ -14,13 +13,13 @@ from ui_components.ToolUi import ToolUi
 import operator
 import json
 import urllib2
-from utils import *
 
 
 class Passwords:
     def __init__(self, tk_interface):
         self.ui_interface = tk_interface
         self.tool_state = STATE_INITIAL
+        self.user_18_older = False
         self.ui_interface.override_x_callback(self.override_x)
         self.conn = None
         self.os = None
@@ -43,6 +42,11 @@ class Passwords:
         self.report = dict()
         self.render_ui()
 
+    def display_initial_info_label(self):
+        self.ui_interface.set_info_label_text(
+            "You must close your Chrome windows temporarily, so we can access your password manager and history data. "
+            "You can reopen the browser in a few seconds.")
+
     def render_ui(self):
         title = "Chrome Password Analysis"
         self.ui_interface.set_window_title(title)
@@ -54,9 +58,7 @@ class Passwords:
         ]
 
         self.ui_interface.render_header(title, buttons)
-        self.ui_interface.set_info_label_text(
-            "You must close your Chrome windows temporarily, so we can access your password manager and history data. "
-            "You can reopen the browser in a few seconds.")
+        self.display_initial_info_label()
         toggled_frames = [
             {"title": "Reused Passwords", "textbox_name": UI_TEXTBOX_REUSED_PASSWORDS},
             {"title": "Unused Accounts", "textbox_name": UI_TEXTBOX_UNUSED_ACCOUNTS},
@@ -73,15 +75,15 @@ class Passwords:
                                                           "results. To analyze your passwords, press the 'Start' "
                                                           "button and wait for a few seconds.\n\nAre you sure you "
                                                           "want to exit?"):
-                    self.ui_interface.destroy_main()
+                self.ui_interface.destroy_main()
         elif self.tool_state == STATE_ANALYSIS:
             if not self.ui_interface.display_messagebox_yesno("Browser Password Analysis",
-                                                          "Would you like to share the summarized results for "
-                                                          "research purposes. We only collect minimal information for "
-                                                          "research analysis. You can see what data we collect before "
-                                                          "sharing your data.\n\nWould you like to preview (and send) "
-                                                          "the data?"):
-                    self.ui_interface.destroy_main()
+                                                              "Would you like to share the summarized results for "
+                                                              "research purposes. We only collect minimal information for "
+                                                              "research analysis. You can see what data we collect before "
+                                                              "sharing your data.\n\nWould you like to preview (and send) "
+                                                              "the data?"):
+                self.ui_interface.destroy_main()
             else:
                 self.report_click()
         else:
@@ -114,15 +116,15 @@ class Passwords:
         self.ui_interface.text_box_insert(UI_TEXTBOX_REPORT_PREVIEW, "\n\nAccount Access Frequency:\n\t")
         if 3 in self.report['access_frequency']:
             self.ui_interface.text_box_insert(UI_TEXTBOX_REPORT_PREVIEW,
-                                              "Very Frequently Used Accounts:\n\t\t" + "\n\t\t".join(
+                                              "Daily Used Accounts:\n\t\t" + "\n\t\t".join(
                                                   self.report['access_frequency'][3]))
         if 2 in self.report['access_frequency']:
             self.ui_interface.text_box_insert(UI_TEXTBOX_REPORT_PREVIEW,
-                                              "\n\tFrequently Used Accounts:\n\t\t" + "\n\t\t".join(
+                                              "\n\tWeekly Used Accounts:\n\t\t" + "\n\t\t".join(
                                                   self.report['access_frequency'][2]))
         if 1 in self.report['access_frequency']:
             self.ui_interface.text_box_insert(UI_TEXTBOX_REPORT_PREVIEW,
-                                              "\n\tIntermittently Used Accounts:\n\t\t" + "\n\t\t".join(
+                                              "\n\tQuarterly Used Accounts:\n\t\t" + "\n\t\t".join(
                                                   self.report['access_frequency'][1]))
         self.ui_interface.text_box_insert(UI_TEXTBOX_REPORT_PREVIEW,
                                           "\n\nPassword Reset required domains:\n\tTotal - " + str(
@@ -246,6 +248,7 @@ class Passwords:
         try:
             return self.conn.execute(sql)
         except sqlite3.OperationalError:
+            self.display_initial_info_label()
             self.ui_interface.display_popup(title="Error",
                                             message="You must close your Chrome windows temporarily so we can access "
                                                     "your password manager and history data. You can reopen the browser"
@@ -428,7 +431,6 @@ class Passwords:
                     WEIGHTED_AVG_CURRENT_WEIGHT * access_frequency)
             if access_frequency >= 0.4:
                 self.domain_access_frequency[domain] = 3
-
                 continue
 
             # determine frequent access
@@ -476,10 +478,12 @@ class Passwords:
                 frequently_reused_count) + " passwords you are heavily reusing. See the top " + str(
                 frequently_reused_count) + " entries for the hash of the password and the number of accounts "
                                            "where it is used.\n\n", text_style=TEXTBOX_STYLE_INFO)
-        for password in sorted_passwords:
-            self.ui_interface.text_box_insert(text_box=UI_TEXTBOX_REUSED_PASSWORDS, message=password + " => " + str(
-                len(self.password_domain_dict[password])) + "\n")
-            self.report['reused_passwords']['reuse'].append(len(self.password_domain_dict[password]))
+        for password_i in xrange(len(sorted_passwords)):
+            self.ui_interface.text_box_insert(text_box=UI_TEXTBOX_REUSED_PASSWORDS,
+                                              message="Password " + str(password_i + 1) + " => " + str(
+                                                  len(self.password_domain_dict[sorted_passwords[password_i]])) + "\n")
+            self.report['reused_passwords']['reuse'].append(
+                len(self.password_domain_dict[sorted_passwords[password_i]]))
 
         unused_accounts = sorted(self.unused_accounts)
         self.report['unused_accounts'] = {
@@ -500,11 +504,10 @@ class Passwords:
         current_frequency = 4
 
         self.ui_interface.text_box_insert(text_box=UI_TEXTBOX_ACCESS_FREQUENCY,
-                                          message="Accounts as per frequency of use:\n\nVery Frequently Used Accounts: "
-                                                  "Accounts that are accessed almost daily."
-                                                  "\nFrequently Used Accounts: Accounts that are accessed regularly."
-                                                  "\nIntermittently Used Accounts: Accounts that are accessed within "
-                                                  "the last 3 months.\n\n", text_style=TEXTBOX_STYLE_INFO)
+                                          message="Accounts as per frequency of use:\n\nAccounts accessed daily\n"
+                                                  "Accounts accessed weekly\n"
+                                                  "Accounts accessed quarterly (within the last 90 days)\n\n",
+                                          text_style=TEXTBOX_STYLE_INFO)
 
         self.report['access_frequency'] = dict()
         for i in xrange(len(domain_frequency_sorted)):
@@ -512,15 +515,15 @@ class Passwords:
                 current_frequency = domain_frequency_sorted[i][1]
                 if current_frequency == 1:
                     self.ui_interface.text_box_insert(text_box=UI_TEXTBOX_ACCESS_FREQUENCY,
-                                                      message="\nIntermittently accessed accounts:\n",
+                                                      message="\nAccounts accessed quarterly:\n",
                                                       text_style=TEXTBOX_STYLE_HEADING)
                 if current_frequency == 2:
                     self.ui_interface.text_box_insert(text_box=UI_TEXTBOX_ACCESS_FREQUENCY,
-                                                      message="\nFrequently accessed accounts:\n",
+                                                      message="\nAccounts accessed weekly:\n",
                                                       text_style=TEXTBOX_STYLE_HEADING)
                 if current_frequency == 3:
                     self.ui_interface.text_box_insert(text_box=UI_TEXTBOX_ACCESS_FREQUENCY,
-                                                      message="\nVery Frequently accessed accounts:\n",
+                                                      message="\nAccounts accessed daily:\n",
                                                       text_style=TEXTBOX_STYLE_HEADING)
                 self.report['access_frequency'][current_frequency] = []
             self.ui_interface.text_box_insert(text_box=UI_TEXTBOX_ACCESS_FREQUENCY,
@@ -593,6 +596,12 @@ class Passwords:
         self.determine_password_change()
 
     def start_analysis(self):
+        if not self.user_18_older:
+            if not self.ui_interface.display_messagebox_yesno("Consent", "Are you 18 years old or older?"):
+                self.ui_interface.destroy_main()
+                return
+
+        self.user_18_older = True
         result = self.get_chrome_passwords()
         if result == False:
             return

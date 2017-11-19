@@ -46,15 +46,13 @@ class ToolUi():
     @staticmethod
     def display_popup(title, message):
         tkMessageBox.showinfo(title, message)
-        """
-        dialog = Toplevel()
-        dialog.title(title)
-        msg = Label(dialog, text=message, justify=LEFT)
-        msg.pack(padx=30, pady=30)
-        """
 
     @staticmethod
-    def display_messagebox_yesno(title, message):
+    def display_yes_no_message(title, message):
+        return tkMessageBox.askyesno(title, message)
+
+    def display_messagebox_yesno(self, title, message):
+        self.set_info_label_text("Please wait while the tool analyzes your passwords.")
         return tkMessageBox.askyesno(title, message)
 
     def render_frames(self, frames):
