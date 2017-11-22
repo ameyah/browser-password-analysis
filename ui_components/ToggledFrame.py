@@ -4,7 +4,6 @@ from ToolTip import Tooltip
 
 
 class ToggledFrame(tk.Frame):
-
     def __init__(self, parent, text="", tooltip=None, *args, **options):
         tk.Frame.__init__(self, parent, *args, **options)
 

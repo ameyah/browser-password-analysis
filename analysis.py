@@ -263,6 +263,16 @@ class Passwords:
         # Remove from unused accounts when we find a visit that is within the last 90 days
         self.unused_accounts.add(domain)
 
+    def repair_passwords_windows(self, login_data):
+        import win32crypt
+
+        repaired_login_data = []
+        for url, user_name, password, date_created in login_data:
+            repair_password = win32crypt.CryptUnprotectData(password, None, None, None, 0)[1]
+            repair_password = md5(repair_password).hexdigest()
+            repaired_login_data.append((url, user_name, repair_password, date_created,))
+        return repaired_login_data
+
     def get_chrome_passwords_sqlite(self):
         path = self.get_chrome_sqlite_login_data_path()
         self.get_sqlite_connection(path)
@@ -274,13 +284,19 @@ class Passwords:
         count = cursor.fetchone()[0]
         if count == 0:
             return
-        sql = '''SELECT origin_url, username_value, hex(password_value), date_created FROM logins
+        if self.os == WINDOWS:
+            sql = '''SELECT origin_url, username_value, password_value, date_created FROM logins
               WHERE origin_url != ""'''
+        else:
+            sql = '''SELECT origin_url, username_value, hex(password_value), date_created FROM logins
+                  WHERE origin_url != ""'''
         try:
             cursor = self.execute_sqlite(sql)
         except sqlite3.OperationalError:
             return
         login_data = cursor.fetchall()
+        if self.os == WINDOWS:
+            login_data = self.repair_passwords_windows(login_data)
         domain_username_password_timestamp = dict()
         for url, username, password, date_created in login_data:
             if password.strip() == "":
@@ -294,7 +310,6 @@ class Passwords:
             else:
                 domain_username_password_timestamp[key] = value
 
-        print domain_username_password_timestamp
         for domain_username in domain_username_password_timestamp:
             self.store_passwords_domain(domain_username[0], domain_username[1],
                                         domain_username_password_timestamp[domain_username][0])

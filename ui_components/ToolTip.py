@@ -98,12 +98,12 @@ class Tooltip():
                        background=bg,
                        borderwidth=0)
         label = tk.Label(win,
-                          text=self.text,
-                          justify=tk.LEFT,
-                          background=bg,
-                          relief=tk.SOLID,
-                          borderwidth=0,
-                          wraplength=self.wraplength)
+                         text=self.text,
+                         justify=tk.LEFT,
+                         background=bg,
+                         relief=tk.SOLID,
+                         borderwidth=0,
+                         wraplength=self.wraplength)
 
         label.grid(padx=(pad[0], pad[2]),
                    pady=(pad[1], pad[3]),
