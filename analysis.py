@@ -263,7 +263,8 @@ class Passwords:
         # Remove from unused accounts when we find a visit that is within the last 90 days
         self.unused_accounts.add(domain)
 
-    def repair_passwords_windows(self, login_data):
+    @staticmethod
+    def repair_passwords_windows(login_data):
         import win32crypt
 
         repaired_login_data = []

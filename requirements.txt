@@ -4,9 +4,6 @@
 # constants.py: 1
 appdirs == 1.4.3
 
-# setup.py: 8
-setuptools == 20.7.0.egg
-
 # analysis.py: 8
 tldextract == 2.0.1
 
