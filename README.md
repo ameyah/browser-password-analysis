@@ -56,7 +56,7 @@ Standalone distributions are OS dependant. Please follow the instructions below 
 
 **Ubuntu and OS X**
 
-Open terminal and navigate to dist_ubuntu/analysis (dist_os_x/analysis for OS X). Change the permissions of "analysis" file using the following command:
+Open terminal and navigate to dist/dist_ubuntu/analysis (dist/dist_os_x/analysis for OS X). Change the permissions of "analysis" file using the following command:
 
     $ chmod +x analysis
 
@@ -66,4 +66,4 @@ Then start the tool using the following command:
 
 **Windows**
 
-Navigate to dist_windows/analysis, and run analysis.exe
+Navigate to dist/dist_windows/analysis, and run analysis.exe
